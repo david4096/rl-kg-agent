@@ -1,0 +1,6 @@
+# Additional dependencies for training visualization
+matplotlib>=3.7.0
+pandas>=2.0.0
+
+# Note: tkinter is usually included with Python installations
+# If tkinter is not available, install python3-tk on Ubuntu/Debian or similar package on other systems

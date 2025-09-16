@@ -1,0 +1,232 @@
+@prefix ex: <http://example.org/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix dbo: <http://dbpedia.org/ontology/> .
+@prefix dbr: <http://dbpedia.org/resource/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Classes
+ex:Country rdf:type rdfs:Class .
+ex:City rdf:type rdfs:Class .
+ex:Person rdf:type rdfs:Class .
+ex:Book rdf:type rdfs:Class .
+ex:Author rdf:type rdfs:Class .
+ex:Planet rdf:type rdfs:Class .
+ex:Chemical rdf:type rdfs:Class .
+ex:Process rdf:type rdfs:Class .
+
+# Properties
+ex:isCapitalOf rdf:type rdf:Property .
+ex:hasCapital rdf:type rdf:Property .
+ex:locatedIn rdf:type rdf:Property .
+ex:wrote rdf:type rdf:Property .
+ex:hasAuthor rdf:type rdf:Property .
+ex:bornIn rdf:type rdf:Property .
+ex:diedIn rdf:type rdf:Property .
+ex:hasPopulation rdf:type rdf:Property .
+ex:hasArea rdf:type rdf:Property .
+ex:publishedIn rdf:type rdf:Property .
+ex:hasSymbol rdf:type rdf:Property .
+ex:hasMass rdf:type rdf:Property .
+ex:isLargestIn rdf:type rdf:Property .
+
+# Countries and Cities
+ex:France rdf:type ex:Country ;
+    rdfs:label "France" ;
+    ex:hasCapital ex:Paris ;
+    ex:hasPopulation "67000000"^^xsd:integer ;
+    ex:hasArea "643801"^^xsd:integer .
+
+ex:Paris rdf:type ex:City ;
+    rdfs:label "Paris" ;
+    ex:isCapitalOf ex:France ;
+    ex:locatedIn ex:France ;
+    ex:hasPopulation "2161000"^^xsd:integer ;
+    geo:lat "48.8566"^^xsd:float ;
+    geo:long "2.3522"^^xsd:float .
+
+ex:UnitedKingdom rdf:type ex:Country ;
+    rdfs:label "United Kingdom" ;
+    ex:hasCapital ex:London .
+
+ex:London rdf:type ex:City ;
+    rdfs:label "London" ;
+    ex:isCapitalOf ex:UnitedKingdom ;
+    ex:locatedIn ex:UnitedKingdom .
+
+ex:Italy rdf:type ex:Country ;
+    rdfs:label "Italy" ;
+    ex:hasCapital ex:Rome .
+
+ex:Rome rdf:type ex:City ;
+    rdfs:label "Rome" ;
+    ex:isCapitalOf ex:Italy ;
+    ex:locatedIn ex:Italy .
+
+# People and Authors
+ex:WilliamShakespeare rdf:type ex:Author, ex:Person ;
+    rdfs:label "William Shakespeare" ;
+    foaf:name "William Shakespeare" ;
+    ex:bornIn "1564"^^xsd:gYear ;
+    ex:diedIn "1616"^^xsd:gYear ;
+    ex:locatedIn ex:UnitedKingdom .
+
+ex:LeonardoDaVinci rdf:type ex:Author, ex:Person ;
+    rdfs:label "Leonardo da Vinci" ;
+    foaf:name "Leonardo da Vinci" ;
+    ex:bornIn "1452"^^xsd:gYear ;
+    ex:diedIn "1519"^^xsd:gYear ;
+    ex:locatedIn ex:Italy .
+
+ex:CharlesDarwin rdf:type ex:Person ;
+    rdfs:label "Charles Darwin" ;
+    foaf:name "Charles Darwin" ;
+    ex:bornIn "1809"^^xsd:gYear ;
+    ex:diedIn "1882"^^xsd:gYear ;
+    ex:locatedIn ex:UnitedKingdom .
+
+ex:GuidoVanRossum rdf:type ex:Person ;
+    rdfs:label "Guido van Rossum" ;
+    foaf:name "Guido van Rossum" .
+
+# Books and Works
+ex:RomeoAndJuliet rdf:type ex:Book ;
+    rdfs:label "Romeo and Juliet" ;
+    ex:hasAuthor ex:WilliamShakespeare ;
+    ex:publishedIn "1597"^^xsd:gYear .
+
+ex:MonaLisa rdf:type dbo:Artwork ;
+    rdfs:label "Mona Lisa" ;
+    ex:hasAuthor ex:LeonardoDaVinci .
+
+ex:OnTheOriginOfSpecies rdf:type ex:Book ;
+    rdfs:label "On the Origin of Species" ;
+    ex:hasAuthor ex:CharlesDarwin ;
+    ex:publishedIn "1859"^^xsd:gYear .
+
+# Programming Languages
+ex:Python rdf:type dbo:ProgrammingLanguage ;
+    rdfs:label "Python" ;
+    ex:hasAuthor ex:GuidoVanRossum .
+
+# Solar System and Planets
+ex:SolarSystem rdf:type dbo:System ;
+    rdfs:label "Solar System" .
+
+ex:Jupiter rdf:type ex:Planet ;
+    rdfs:label "Jupiter" ;
+    ex:isLargestIn ex:SolarSystem ;
+    ex:locatedIn ex:SolarSystem .
+
+ex:Earth rdf:type ex:Planet ;
+    rdfs:label "Earth" ;
+    ex:locatedIn ex:SolarSystem ;
+    dbo:shape "round" .
+
+# Chemistry
+ex:Gold rdf:type ex:Chemical ;
+    rdfs:label "Gold" ;
+    ex:hasSymbol "Au" .
+
+ex:Water rdf:type ex:Chemical ;
+    rdfs:label "Water" ;
+    ex:hasSymbol "H2O" ;
+    rdf:type dbo:Compound .
+
+# Geography
+ex:MountEverest rdf:type dbo:Mountain ;
+    rdfs:label "Mount Everest" ;
+    dbo:height "8848"^^xsd:integer ;
+    ex:locatedIn dbr:Nepal .
+
+ex:EiffelTower rdf:type dbo:Building ;
+    rdfs:label "Eiffel Tower" ;
+    ex:locatedIn ex:Paris ;
+    dbo:height "324"^^xsd:integer .
+
+# Biological Processes
+ex:Photosynthesis rdf:type ex:Process ;
+    rdfs:label "Photosynthesis" ;
+    rdfs:comment "Process by which plants convert sunlight into energy" ;
+    dbo:input "sunlight, carbon dioxide, water" ;
+    dbo:output "glucose, oxygen" .
+
+ex:CellularRespiration rdf:type ex:Process ;
+    rdfs:label "Cellular Respiration" ;
+    rdfs:comment "Process by which cells break down glucose to release energy" ;
+    dbo:input "glucose, oxygen" ;
+    dbo:output "carbon dioxide, water, ATP" .
+
+# Physics
+ex:SpeedOfLight rdf:type dbo:PhysicalConstant ;
+    rdfs:label "Speed of Light" ;
+    dbo:value "299792458"^^xsd:integer ;
+    dbo:unit "meters per second" .
+
+# Historical Events
+ex:WorldWarII rdf:type dbo:HistoricalEvent ;
+    rdfs:label "World War II" ;
+    dbo:startDate "1939"^^xsd:gYear ;
+    dbo:endDate "1945"^^xsd:gYear .
+
+ex:FirstOlympicGames rdf:type dbo:HistoricalEvent ;
+    rdfs:label "First Olympic Games" ;
+    ex:locatedIn dbr:Olympia_Greece ;
+    dbo:startDate "-776"^^xsd:gYear .
+
+# Technology
+ex:WorldWideWeb rdf:type dbo:Technology ;
+    rdfs:label "World Wide Web" ;
+    dbo:inventionDate "1989"^^xsd:gYear ;
+    ex:hasAuthor dbr:Tim_Berners_Lee .
+
+# Scientific Concepts
+ex:EvolutionByNaturalSelection rdf:type dbo:Theory ;
+    rdfs:label "Theory of Evolution by Natural Selection" ;
+    ex:hasAuthor ex:CharlesDarwin .
+
+ex:OhmsLaw rdf:type dbo:PhysicalLaw ;
+    rdfs:label "Ohm's Law" ;
+    rdfs:comment "Voltage equals current multiplied by resistance" ;
+    dbo:formula "V = I × R" .
+
+# Climate Change
+ex:ClimateChange rdf:type dbo:Phenomenon ;
+    rdfs:label "Climate Change" ;
+    dbo:cause "greenhouse gas emissions, deforestation, industrial processes" .
+
+# Continents
+ex:Africa rdf:type dbo:Continent ;
+    rdfs:label "Africa" .
+
+ex:Asia rdf:type dbo:Continent ;
+    rdfs:label "Asia" .
+
+ex:Europe rdf:type dbo:Continent ;
+    rdfs:label "Europe" .
+
+ex:NorthAmerica rdf:type dbo:Continent ;
+    rdfs:label "North America" .
+
+ex:SouthAmerica rdf:type dbo:Continent ;
+    rdfs:label "South America" .
+
+ex:Australia rdf:type dbo:Continent ;
+    rdfs:label "Australia" .
+
+ex:Antarctica rdf:type dbo:Continent ;
+    rdfs:label "Antarctica" .
+
+# Ocean Phenomena
+ex:Tides rdf:type dbo:Phenomenon ;
+    rdfs:label "Ocean Tides" ;
+    rdfs:comment "Caused by gravitational forces of the moon and sun" ;
+    dbo:cause ex:Moon, ex:Sun .
+
+ex:Moon rdf:type dbo:CelestialBody ;
+    rdfs:label "Moon" .
+
+ex:Sun rdf:type dbo:CelestialBody ;
+    rdfs:label "Sun" .

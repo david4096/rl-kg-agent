@@ -1,0 +1,67 @@
+{
+  "reward_weights": {
+    "semantic_similarity": 0.5,
+    "action_success": 0.2,
+    "knowledge_gain": 0.2,
+    "efficiency": 0.05,
+    "user_satisfaction": 0.05
+  },
+  "ppo_config": {
+    "learning_rate": 1e-4,
+    "n_steps": 4096,
+    "batch_size": 128,
+    "n_epochs": 15,
+    "clip_range": 0.1,
+    "ent_coef": 0.02,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 0.95,
+    "gamma": 0.99
+  },
+  "environment_config": {
+    "max_steps_per_episode": 8,
+    "observation_space": {
+      "query_embedding_dim": 384,
+      "context_features_dim": 20,
+      "action_history_dim": 5,
+      "internal_kg_features_dim": 10
+    }
+  },
+  "sentence_transformer_config": {
+    "model_name": "all-MiniLM-L6-v2",
+    "max_seq_length": 256,
+    "batch_size": 64
+  },
+  "knowledge_graph_config": {
+    "internal_kg_storage_path": "training_internal_kg.pkl",
+    "importance_threshold": -0.5,
+    "max_nodes": 50000,
+    "max_contexts": 20000,
+    "pruning_interval": 50
+  },
+  "dataset_config": {
+    "cache_dir": ".cache/datasets",
+    "default_batch_size": 64,
+    "max_examples": 10000,
+    "shuffle": true
+  },
+  "training_config": {
+    "total_timesteps": 100000,
+    "eval_frequency": 10000,
+    "save_frequency": 20000,
+    "log_frequency": 1000,
+    "early_stopping_patience": 5
+  },
+  "logging_config": {
+    "level": "DEBUG",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "log_file": "training.log"
+  },
+  "llm_config": {
+    "model_name": "gpt-3.5-turbo",
+    "api_key": null,
+    "max_tokens": 256,
+    "temperature": 0.5,
+    "timeout": 30
+  }
+}

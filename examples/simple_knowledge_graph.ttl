@@ -1,0 +1,11 @@
+@prefix ex: <http://example.org/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# Simple example for testing
+ex:Paris rdfs:label "Paris" .
+ex:Paris ex:isCapitalOf ex:France .
+ex:France rdfs:label "France" .
+
+ex:WilliamShakespeare rdfs:label "William Shakespeare" .
+ex:RomeoAndJuliet rdfs:label "Romeo and Juliet" .
+ex:RomeoAndJuliet ex:writtenBy ex:WilliamShakespeare .

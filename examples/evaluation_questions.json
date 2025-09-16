@@ -1,0 +1,86 @@
+[
+  {
+    "question": "What is the speed of light in vacuum?",
+    "expected_answer": "299,792,458 meters per second",
+    "question_type": "factual",
+    "difficulty": "medium",
+    "category": "physics"
+  },
+  {
+    "question": "How many elements are in the periodic table?",
+    "expected_answer": "118",
+    "question_type": "factual",
+    "difficulty": "medium",
+    "category": "chemistry"
+  },
+  {
+    "question": "What is the tallest mountain in the world?",
+    "expected_answer": "Mount Everest",
+    "question_type": "factual",
+    "difficulty": "easy",
+    "category": "geography"
+  },
+  {
+    "question": "Who developed the theory of evolution by natural selection?",
+    "expected_answer": "Charles Darwin",
+    "question_type": "factual",
+    "difficulty": "medium",
+    "category": "biology"
+  },
+  {
+    "question": "What programming language was created by Guido van Rossum?",
+    "expected_answer": "Python",
+    "question_type": "factual",
+    "difficulty": "medium",
+    "category": "computer_science"
+  },
+  {
+    "question": "Explain the difference between machine learning and artificial intelligence.",
+    "expected_answer": "Artificial Intelligence is the broader concept of machines being able to carry out tasks in a way that we would consider smart. Machine Learning is a subset of AI that focuses on algorithms that can learn from and make predictions or decisions based on data.",
+    "question_type": "explanation",
+    "difficulty": "hard",
+    "category": "computer_science"
+  },
+  {
+    "question": "What causes tides in the ocean?",
+    "expected_answer": "Tides are caused by the gravitational forces exerted by the moon and sun on Earth's oceans.",
+    "question_type": "causal",
+    "difficulty": "medium",
+    "category": "earth_science"
+  },
+  {
+    "question": "Where was the first Olympic Games held?",
+    "expected_answer": "Olympia, Greece",
+    "question_type": "location",
+    "difficulty": "medium",
+    "category": "history"
+  },
+  {
+    "question": "When was the World Wide Web invented?",
+    "expected_answer": "1989-1990",
+    "question_type": "temporal",
+    "difficulty": "medium",
+    "category": "technology"
+  },
+  {
+    "question": "Is water a compound or an element?",
+    "expected_answer": "Compound",
+    "question_type": "boolean",
+    "difficulty": "easy",
+    "category": "chemistry"
+  },
+  {
+    "question": "Compare photosynthesis and cellular respiration.",
+    "expected_answer": "Photosynthesis converts light energy into chemical energy (glucose) using carbon dioxide and water, releasing oxygen. Cellular respiration breaks down glucose using oxygen to release energy for cells, producing carbon dioxide and water. They are essentially opposite processes.",
+    "question_type": "explanation",
+    "difficulty": "hard",
+    "category": "biology"
+  },
+  {
+    "question": "What is the relationship between voltage, current, and resistance?",
+    "expected_answer": "According to Ohm's Law, voltage equals current multiplied by resistance (V = I × R). This means voltage is directly proportional to current and resistance.",
+    "question_type": "explanation",
+    "difficulty": "medium",
+    "category": "physics"
+  }
+]

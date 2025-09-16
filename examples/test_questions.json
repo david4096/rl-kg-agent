@@ -1,0 +1,92 @@
+[
+  {
+    "question": "What is the capital of France?",
+    "expected_answer": "Paris",
+    "question_type": "factual",
+    "difficulty": "easy"
+  },
+  {
+    "question": "Which city is the capital of France?",
+    "expected_answer": "Paris",
+    "question_type": "factual",
+    "difficulty": "easy"
+  },
+  {
+    "question": "Who wrote Romeo and Juliet?",
+    "expected_answer": "William Shakespeare",
+    "question_type": "factual",
+    "difficulty": "easy"
+  },
+  {
+    "question": "What is the process by which plants convert sunlight into energy?",
+    "expected_answer": "Photosynthesis",
+    "question_type": "factual",
+    "difficulty": "medium"
+  },
+  {
+    "question": "How does photosynthesis work?",
+    "expected_answer": "Photosynthesis is the process where plants use chlorophyll to convert light energy, carbon dioxide, and water into glucose and oxygen.",
+    "question_type": "explanation",
+    "difficulty": "medium"
+  },
+  {
+    "question": "When did World War II end?",
+    "expected_answer": "1945",
+    "question_type": "temporal",
+    "difficulty": "easy"
+  },
+  {
+    "question": "Where is the Eiffel Tower located?",
+    "expected_answer": "Paris, France",
+    "question_type": "location",
+    "difficulty": "easy"
+  },
+  {
+    "question": "Why do leaves change color in autumn?",
+    "expected_answer": "Leaves change color because chlorophyll breaks down, revealing other pigments like carotenoids and anthocyanins.",
+    "question_type": "causal",
+    "difficulty": "medium"
+  },
+  {
+    "question": "Is the Earth round?",
+    "expected_answer": "Yes",
+    "question_type": "boolean",
+    "difficulty": "easy"
+  },
+  {
+    "question": "Can you explain the relationship between Einstein's theory of relativity and time dilation?",
+    "expected_answer": "Einstein's theory of relativity shows that time passes differently for objects moving at different speeds or in different gravitational fields. Time dilation occurs when time appears to slow down relative to an observer.",
+    "question_type": "explanation",
+    "difficulty": "hard"
+  },
+  {
+    "question": "What are the main causes of climate change?",
+    "expected_answer": "The main causes of climate change include greenhouse gas emissions from burning fossil fuels, deforestation, industrial processes, and agriculture.",
+    "question_type": "explanation",
+    "difficulty": "medium"
+  },
+  {
+    "question": "Who painted the Mona Lisa?",
+    "expected_answer": "Leonardo da Vinci",
+    "question_type": "factual",
+    "difficulty": "easy"
+  },
+  {
+    "question": "What is the largest planet in our solar system?",
+    "expected_answer": "Jupiter",
+    "question_type": "factual",
+    "difficulty": "easy"
+  },
+  {
+    "question": "How many continents are there?",
+    "expected_answer": "Seven",
+    "question_type": "factual",
+    "difficulty": "easy"
+  },
+  {
+    "question": "What is the chemical symbol for gold?",
+    "expected_answer": "Au",
+    "question_type": "factual",
+    "difficulty": "medium"
+  }
+]
