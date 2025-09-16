@@ -75,8 +75,13 @@ class KGReasoningEnvironment(gym.Env):
             "expected_answer": None,
             "history": [],
             "failed_actions": 0,
-            "internal_knowledge": ""
+            "internal_knowledge": "",
+            "recent_actions": []  # Track action names for diversity calculation
         }
+
+        # If we have training examples, set up the next one
+        if hasattr(self, 'training_examples') and self.training_examples:
+            self._setup_next_training_example()
         self.step_count = 0
         self.episode_reward = 0
         self.action_history = [0] * 5  # Track recent actions
@@ -109,9 +114,25 @@ class KGReasoningEnvironment(gym.Env):
             # Execute the action
             action_result = self.action_manager.execute_action(action_type, context)
 
-            # Calculate reward
+            # Update recent actions for diversity tracking
+            action_name = getattr(action_result, "metadata", {}).get("action", "")
+            if action_name:
+                context["recent_actions"] = context.get("recent_actions", []) + [action_name]
+                # Keep only last 10 actions
+                context["recent_actions"] = context["recent_actions"][-10:]
+
+            # Calculate reward with updated context
             reward_components = self.reward_calculator.calculate_reward(context, action_result)
             reward = reward_components.total
+
+            # Log detailed training information for debugging
+            logger.info(f"TRAINING DEBUG - Action: {action_type.name}")
+            logger.info(f"TRAINING DEBUG - Query: '{context.get('query', 'N/A')}'")
+            logger.info(f"TRAINING DEBUG - Response: '{action_result.response[:100]}...'")
+            logger.info(f"TRAINING DEBUG - Reward Components: semantic={reward_components.semantic_similarity:.3f}, "
+                       f"success={reward_components.action_success:.3f}, diversity={reward_components.action_diversity:.3f}")
+            logger.info(f"TRAINING DEBUG - Total Reward: {reward:.3f}")
+            logger.info("---")
 
             # Update episode tracking
             self.episode_reward += reward
@@ -122,16 +143,8 @@ class KGReasoningEnvironment(gym.Env):
             if self.training_monitor:
                 self.training_monitor.log_action_result(action_result.success)
 
-            # Store interaction in internal KG if applicable
-            if action_type != ActionType.STORE_TO_INTERNAL_KG and action_result.success:
-                # Automatically store successful interactions
-                store_result = self.action_manager.execute_action(
-                    ActionType.STORE_TO_INTERNAL_KG,
-                    context,
-                    response=action_result.response,
-                    previous_action=action_type.name,
-                    action_success=action_result.success
-                )
+            # Storage is now handled within individual actions when appropriate
+            # No need for automatic storage after each action
 
             # Update context for next step
             self.current_context.update({
@@ -188,6 +201,33 @@ class KGReasoningEnvironment(gym.Env):
         # Log query if monitor is available
         if self.training_monitor and query:
             self.training_monitor.log_query(query)
+
+    def set_training_examples(self, examples: List[Dict[str, Any]]):
+        """Set training examples for the environment to cycle through.
+
+        Args:
+            examples: List of training examples with 'question', 'answer', etc.
+        """
+        self.training_examples = examples
+        self.current_example_idx = 0
+        logger.info(f"Set {len(examples)} training examples")
+
+    def _setup_next_training_example(self):
+        """Setup the next training example from the dataset."""
+        if not hasattr(self, 'training_examples') or not self.training_examples:
+            return
+
+        example = self.training_examples[self.current_example_idx]
+        self.set_query(
+            example['question'],
+            example.get('entities', []),
+            example.get('answer', '')
+        )
+
+        # Move to next example for next episode
+        self.current_example_idx = (self.current_example_idx + 1) % len(self.training_examples)
+
+        logger.debug(f"Setup training example: '{example['question'][:50]}...'")
 
     def _get_observation(self) -> Dict[str, np.ndarray]:
         """Get current observation state.

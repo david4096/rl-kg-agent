@@ -361,10 +361,33 @@ def _handle_config_command(command, agent):
 
 def _extract_entities_simple(text):
     """Simple entity extraction (placeholder)."""
-    # This is a very basic implementation
+    # This is a basic implementation that looks for potential proper nouns
     words = text.split()
-    entities = [word for word in words if word[0].isupper() and len(word) > 2]
-    return entities[:5]
+    entities = []
+
+    # Look for capitalized words (original logic)
+    for word in words:
+        clean_word = word.strip('.,!?;:"()[]')
+        if len(clean_word) > 2 and clean_word[0].isupper():
+            entities.append(clean_word)
+
+    # Also look for common geographical/person name patterns (case insensitive)
+    text_lower = text.lower()
+    common_entities = ['france', 'paris', 'london', 'england', 'shakespeare', 'einstein', 'newton']
+    for entity in common_entities:
+        if entity in text_lower:
+            # Capitalize the first letter for KG lookup
+            entities.append(entity.capitalize())
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_entities = []
+    for entity in entities:
+        if entity.lower() not in seen:
+            seen.add(entity.lower())
+            unique_entities.append(entity)
+
+    return unique_entities[:5]
 
 
 def _execute_with_action_manager(action_manager, query, entities, max_steps, save_interactions):
@@ -425,36 +448,50 @@ def _display_simple_result(result):
 
 def _train_with_dataset(agent, dataset, total_timesteps):
     """Custom training loop using dataset examples."""
-    # This is a simplified training approach
-    # In practice, you'd want more sophisticated episode management
-
     examples = list(dataset)
-    current_example_idx = 0
+    if not examples:
+        logger.error("No training examples found in dataset")
+        return
 
-    # Set up first training example
-    if examples:
-        example = examples[current_example_idx]
-        agent.env.set_query(
-            example['question'],
-            example.get('entities', []),
-            example.get('answer', '')
-        )
+    logger.info(f"Training with {len(examples)} examples from dataset")
 
-    # Train the agent
-    def episode_callback():
-        nonlocal current_example_idx
-        # Move to next example for next episode
-        current_example_idx = (current_example_idx + 1) % len(examples)
-        if examples:
-            example = examples[current_example_idx]
-            agent.env.set_query(
-                example['question'],
-                example.get('entities', []),
-                example.get('answer', '')
-            )
+    # Show first few examples for verification
+    for i, example in enumerate(examples[:3]):
+        logger.info(f"Example {i+1}: Question: '{example['question'][:80]}...', Answer: '{example.get('answer', 'N/A')[:50]}...'")
 
-    # Standard PPO training with periodic example updates
-    agent.train(total_timesteps)
+    # Give the environment access to all training examples
+    agent.env.set_training_examples(examples)
+
+    # Train with standard PPO - the environment will cycle through examples automatically
+    try:
+        from stable_baselines3.common.callbacks import BaseCallback
+
+        class TrainingProgressCallback(BaseCallback):
+            """Callback to show training progress with actual questions."""
+            def __init__(self, verbose=0):
+                super().__init__(verbose)
+                self.episode_count = 0
+
+            def _on_step(self) -> bool:
+                # Each step is an episode since all actions are terminal
+                self.episode_count += 1
+
+                if self.episode_count % 200 == 0:
+                    # Get current query from environment
+                    try:
+                        current_query = self.training_env.get_attr('current_context')[0].get('query', 'N/A')
+                        logger.info(f"📊 Training progress: Episode {self.episode_count}, Current question: '{current_query[:60]}...'")
+                    except Exception as e:
+                        logger.debug(f"Could not get current query: {e}")
+
+                return True
+
+        progress_callback = TrainingProgressCallback()
+        agent.model.learn(total_timesteps=total_timesteps, callback=progress_callback)
+        logger.info("Dataset-aware PPO training completed successfully")
+    except Exception as e:
+        logger.error(f"Training with dataset failed: {e}")
+        raise
 
 
 def main():

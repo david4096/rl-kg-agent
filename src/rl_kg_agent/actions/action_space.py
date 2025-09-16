@@ -129,24 +129,44 @@ class QueryKGThenRespondAction(BaseAction):
             # First, query the knowledge graph
             kg_info = ""
             sparql_query = None
+            results = []
+
+            logger.info(f"Starting KG query for user question: '{query}'")
+            logger.info(f"Detected entities: {entities}")
 
             # Try to generate SPARQL query
             if hasattr(self.sparql_generator, 'generate_sparql_from_context'):
                 # Use LLM-powered SPARQL generation
+                logger.info("Using LLM-powered SPARQL generation")
                 sparql_query = self.sparql_generator.generate_sparql_from_context(context)
             else:
                 # Fallback to simple entity-based queries
+                logger.info("Using simple entity-based SPARQL generation")
                 sparql_query = self._generate_simple_query(query, entities)
 
-            if sparql_query and self.kg_loader.validate_sparql_syntax(sparql_query):
-                results = self.kg_loader.execute_sparql(sparql_query)
-                if results:
-                    kg_info = self._format_kg_results(results)
+            if sparql_query:
+                logger.info(f"Generated SPARQL query:\n{sparql_query}")
+
+                if self.kg_loader.validate_sparql_syntax(sparql_query):
+                    logger.info("SPARQL query syntax is valid, executing...")
+                    results = self.kg_loader.execute_sparql(sparql_query)
+                    logger.info(f"KG query returned {len(results)} results")
+
+                    if results:
+                        kg_info = self._format_kg_results(results)
+                        logger.info(f"Formatted KG results for LLM context:\n{kg_info}")
+                    else:
+                        logger.info("No results found from KG query")
+                else:
+                    logger.warning(f"Invalid SPARQL syntax, skipping KG query: {sparql_query}")
+            else:
+                logger.info("No SPARQL query generated, proceeding with direct response")
 
             # Now generate response with KG information
             enhanced_context = context.get("internal_knowledge", "")
             if kg_info:
                 enhanced_context = f"{enhanced_context}\\n\\nKnowledge Graph Information: {kg_info}".strip()
+                logger.info("KG results successfully added to LLM context for final response")
 
             messages = [
                 {
@@ -158,8 +178,14 @@ class QueryKGThenRespondAction(BaseAction):
 
             if enhanced_context:
                 messages[0]["content"] += f"\\n\\nAvailable information: {enhanced_context}"
+                logger.info(f"Final LLM context includes: internal knowledge + KG results (total context length: {len(enhanced_context)} chars)")
+            else:
+                logger.info("No additional context provided to LLM, using direct response mode")
 
             response = self.llm_client.generate_response(messages)
+
+            logger.info(f"Generated final response using {'KG-enhanced' if kg_info else 'direct'} mode")
+            logger.info(f"Response length: {len(response)} characters")
 
             return ActionResult(
                 success=True,
@@ -167,8 +193,9 @@ class QueryKGThenRespondAction(BaseAction):
                 metadata={
                     "action": "kg_query_response",
                     "sparql_query": sparql_query,
-                    "kg_results_found": len(results) if 'results' in locals() else 0,
-                    "used_kg_info": bool(kg_info)
+                    "kg_results_found": len(results),
+                    "used_kg_info": bool(kg_info),
+                    "context_length": len(enhanced_context) if enhanced_context else 0
                 },
                 confidence=0.9 if kg_info else 0.6
             )
@@ -198,7 +225,31 @@ class QueryKGThenRespondAction(BaseAction):
     def _generate_simple_query(self, query: str, entities: List[str]) -> Optional[str]:
         """Generate simple SPARQL query based on entities."""
         if not entities:
-            return None
+            # Fallback: try to extract key terms from the query for broad search
+            query_words = [word.strip('.,!?;:"()[]').lower() for word in query.split() if len(word.strip('.,!?;:"()[]')) > 3]
+            if not query_words:
+                return None
+
+            # Create a broad search query using key terms
+            search_term = query_words[0].capitalize()  # Use the first meaningful word
+            logger.info(f"No entities detected, using fallback search for term: '{search_term}'")
+
+            return f"""
+            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+            SELECT ?s ?p ?o WHERE {{
+                {{
+                    ?s rdfs:label ?label .
+                    FILTER(CONTAINS(LCASE(?label), "{search_term.lower()}"))
+                    ?s ?p ?o
+                }}
+                UNION
+                {{
+                    ?o rdfs:label ?label .
+                    FILTER(CONTAINS(LCASE(?label), "{search_term.lower()}"))
+                    ?s ?p ?o
+                }}
+            }} LIMIT 15
+            """
 
         entity = entities[0]
         return f"""

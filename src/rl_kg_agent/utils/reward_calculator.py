@@ -19,6 +19,7 @@ class RewardComponents:
     knowledge_gain: float
     efficiency: float
     user_satisfaction: float
+    action_diversity: float
     total: float
 
 
@@ -37,11 +38,12 @@ class RewardCalculator:
 
         # Reward weights for different components
         self.weights = {
-            "semantic_similarity": 0.4,
-            "action_success": 0.25,
+            "semantic_similarity": 0.3,
+            "action_success": 0.2,
             "knowledge_gain": 0.15,
             "efficiency": 0.1,
-            "user_satisfaction": 0.1
+            "user_satisfaction": 0.1,
+            "action_diversity": 0.15
         }
 
     def _load_model(self) -> None:
@@ -77,6 +79,7 @@ class RewardCalculator:
         knowledge_gain = self._calculate_knowledge_gain_reward(context, action_result)
         efficiency = self._calculate_efficiency_reward(context, action_result)
         user_satisfaction = self._calculate_user_satisfaction_reward(context, action_result)
+        action_diversity = self._calculate_action_diversity_reward(context, action_result)
 
         # Calculate weighted total with safety checks
         try:
@@ -85,7 +88,8 @@ class RewardCalculator:
                 action_success * self.weights["action_success"] +
                 knowledge_gain * self.weights["knowledge_gain"] +
                 efficiency * self.weights["efficiency"] +
-                user_satisfaction * self.weights["user_satisfaction"]
+                user_satisfaction * self.weights["user_satisfaction"] +
+                action_diversity * self.weights["action_diversity"]
             )
             # Ensure total is finite
             if not np.isfinite(total):
@@ -101,6 +105,7 @@ class RewardCalculator:
             knowledge_gain=knowledge_gain,
             efficiency=efficiency,
             user_satisfaction=user_satisfaction,
+            action_diversity=action_diversity,
             total=total
         )
 
@@ -276,6 +281,51 @@ class RewardCalculator:
 
         return min(max(satisfaction, 0.0), 1.0)
 
+    def _calculate_action_diversity_reward(self, context: Dict[str, Any], action_result: Any) -> float:
+        """Calculate reward based on action diversity to discourage monotonic behavior.
+
+        Args:
+            context: Current context
+            action_result: Result from action execution
+
+        Returns:
+            Action diversity reward between 0 and 1
+        """
+        # Get recent action history from metadata
+        current_action = getattr(action_result, "metadata", {}).get("action", "")
+        recent_actions = context.get("recent_actions", [])
+
+        # Base diversity reward
+        diversity_reward = 0.5
+
+        if not current_action:
+            return diversity_reward
+
+        # Penalize if the same action is used repeatedly
+        if len(recent_actions) >= 3:
+            last_3_actions = recent_actions[-3:]
+            if all(action == current_action for action in last_3_actions):
+                diversity_reward -= 0.4  # Heavy penalty for 3+ consecutive same actions
+                logger.info(f"Diversity penalty applied for repeated {current_action} action")
+            elif recent_actions[-1] == current_action:
+                diversity_reward -= 0.2  # Moderate penalty for immediate repetition
+
+        # Reward using different action types
+        unique_actions_used = len(set(recent_actions[-5:] + [current_action]))
+        if unique_actions_used >= 3:
+            diversity_reward += 0.3
+        elif unique_actions_used >= 2:
+            diversity_reward += 0.1
+
+        # Special penalty for PLAN_THEN_RESPOND overuse (addressing the current issue)
+        if current_action == "planned_response":
+            plan_count = sum(1 for action in recent_actions[-5:] if action == "planned_response")
+            if plan_count >= 2:
+                diversity_reward -= 0.3
+                logger.info("Special penalty for PLAN_THEN_RESPOND overuse")
+
+        return min(max(diversity_reward, 0.0), 1.0)
+
     def calculate_batch_rewards(self, contexts: List[Dict[str, Any]],
                                action_results: List[Any],
                                ground_truths: Optional[List[str]] = None) -> List[RewardComponents]:
@@ -316,7 +366,7 @@ class RewardCalculator:
 
     def update_weights(self, semantic_weight: float = None, success_weight: float = None,
                       knowledge_weight: float = None, efficiency_weight: float = None,
-                      satisfaction_weight: float = None) -> None:
+                      satisfaction_weight: float = None, diversity_weight: float = None) -> None:
         """Update reward component weights.
 
         Args:
@@ -325,6 +375,7 @@ class RewardCalculator:
             knowledge_weight: Weight for knowledge gain
             efficiency_weight: Weight for efficiency
             satisfaction_weight: Weight for user satisfaction
+            diversity_weight: Weight for action diversity
         """
         if semantic_weight is not None:
             self.weights["semantic_similarity"] = semantic_weight
@@ -336,6 +387,8 @@ class RewardCalculator:
             self.weights["efficiency"] = efficiency_weight
         if satisfaction_weight is not None:
             self.weights["user_satisfaction"] = satisfaction_weight
+        if diversity_weight is not None:
+            self.weights["action_diversity"] = diversity_weight
 
         # Ensure weights sum to approximately 1
         total_weight = sum(self.weights.values())

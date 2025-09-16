@@ -163,11 +163,11 @@ class ActionManager:
 
         # Base confidence scores for new action types
         base_confidence = {
-            ActionType.RESPOND_DIRECTLY: 0.7,           # Reliable fallback
-            ActionType.QUERY_KG_THEN_RESPOND: 0.8,     # Good for factual questions
-            ActionType.PLAN_THEN_RESPOND: 0.75,        # Good for complex questions
-            ActionType.ASK_CLARIFYING_QUESTION: 0.6,   # Good for ambiguous questions
-            ActionType.STORE_AND_RESPOND: 0.65         # Good when learning new info
+            ActionType.RESPOND_DIRECTLY: 0.75,          # Reliable fallback - increased
+            ActionType.QUERY_KG_THEN_RESPOND: 0.85,    # Good for factual questions - increased
+            ActionType.PLAN_THEN_RESPOND: 0.65,        # Good for complex questions - decreased to prevent overuse
+            ActionType.ASK_CLARIFYING_QUESTION: 0.65,  # Good for ambiguous questions - increased
+            ActionType.STORE_AND_RESPOND: 0.7          # Good when learning new info - increased
         }
 
         confidence = base_confidence.get(action_type, 0.5)
