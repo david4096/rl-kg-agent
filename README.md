@@ -13,6 +13,35 @@ A Reinforcement Learning agent for Knowledge Graph reasoning that combines stati
 
 ## Installation
 
+### Using UV (Recommended)
+
+```bash
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone the repository
+git clone <repository-url>
+cd rl-kg-agent
+
+# Install dependencies
+uv sync
+
+# For development with all dev dependencies
+uv sync --dev
+```
+
+#### Quick Development Setup
+
+```bash
+# Complete development setup using Makefile
+make dev-setup
+
+# Or manually with uv
+uv sync --dev
+```
+
+### Using pip (Alternative)
+
 ```bash
 # Clone the repository
 git clone <repository-url>
@@ -32,6 +61,11 @@ pip install -e .[dev]
 Start an interactive session with your knowledge graph:
 
 ```bash
+# Using uv
+uv run rl-kg-agent interactive --ttl-file path/to/your/knowledge_graph.ttl
+
+# Or activate environment first
+uv shell
 rl-kg-agent interactive --ttl-file path/to/your/knowledge_graph.ttl
 ```
 
@@ -40,7 +74,7 @@ rl-kg-agent interactive --ttl-file path/to/your/knowledge_graph.ttl
 Train the RL agent on a QA dataset:
 
 ```bash
-rl-kg-agent train --ttl-file path/to/your/knowledge_graph.ttl --dataset squad --episodes 1000 --output-model trained_model
+uv run rl-kg-agent train --ttl-file path/to/your/knowledge_graph.ttl --dataset squad --episodes 1000 --output-model trained_model
 ```
 
 ### 3. Evaluation
@@ -48,7 +82,20 @@ rl-kg-agent train --ttl-file path/to/your/knowledge_graph.ttl --dataset squad --
 Evaluate a trained model:
 
 ```bash
-rl-kg-agent evaluate --ttl-file path/to/your/knowledge_graph.ttl --model-path trained_model --test-file test_questions.json
+uv run rl-kg-agent evaluate --ttl-file path/to/your/knowledge_graph.ttl --model-path trained_model --test-file test_questions.json
+```
+
+### Using Makefile (Alternative)
+
+```bash
+# Interactive mode
+make run-interactive TTL_FILE=path/to/your/knowledge_graph.ttl
+
+# Training
+make run-train TTL_FILE=path/to/your/knowledge_graph.ttl
+
+# Evaluation
+make run-eval TTL_FILE=path/to/your/knowledge_graph.ttl MODEL_PATH=trained_model
 ```
 
 ## Architecture
@@ -134,20 +181,34 @@ src/rl_kg_agent/
 ### Running Tests
 
 ```bash
-pytest tests/
+# Using uv
+uv run pytest tests/
+
+# Or with coverage
+uv run pytest tests/ --cov=src/rl_kg_agent
 ```
 
 ### Code Quality
 
 ```bash
-# Formatting
-black src/
+# Using individual commands
+uv run ruff format src/          # Format code
+uv run ruff check src/           # Lint code
+uv run mypy src/                 # Type checking
+uv run pytest tests/             # Run tests
 
-# Linting
-flake8 src/
+# Using Makefile (recommended for development)
+make format                      # Format code
+make lint                        # Lint code
+make lint-fix                    # Lint with automatic fixes
+make type-check                  # Type checking
+make test                        # Run tests
+make test-cov                    # Run tests with coverage
+make quality                     # Run all quality checks
+make ci                          # Full CI pipeline
 
-# Type checking
-mypy src/
+# See all available commands
+make help
 ```
 
 ## Examples
