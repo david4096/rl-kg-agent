@@ -1,0 +1,47 @@
+{
+  "reward_weights": {
+    "semantic_similarity": 0.4,
+    "action_success": 0.25,
+    "knowledge_gain": 0.15,
+    "efficiency": 0.1,
+    "user_satisfaction": 0.1
+  },
+  "ppo_config": {
+    "learning_rate": 0.0003,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "n_epochs": 10,
+    "gamma": 0.99,
+    "gae_lambda": 0.95
+  },
+  "environment_config": {
+    "max_steps": 10,
+    "timeout": 120
+  },
+  "torchrl": {
+    "enabled": false,
+    "tokenizer_name": "microsoft/DialoGPT-medium",
+    "device": "auto",
+    "batch_size": [
+      1
+    ],
+    "enable_tool_enhancement": true,
+    "tool_timeout": 30.0,
+    "enable_browser_tools": false,
+    "allowed_domains": [
+      "google.com",
+      "github.com",
+      "pubmed.ncbi.nlm.nih.gov"
+    ],
+    "tool_success_weight": 0.1,
+    "knowledge_gain_weight": 0.05,
+    "efficiency_weight": 0.02,
+    "enable_detailed_logging": false,
+    "enable_enhanced_sparql": true,
+    "enable_enhanced_planning": true,
+    "enable_context_awareness": true,
+    "max_history_size": 1000,
+    "enable_caching": true,
+    "log_execution_metrics": true
+  }
+}

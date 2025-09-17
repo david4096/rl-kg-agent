@@ -1,4 +1,4 @@
-"""Command line interface for the RL-KG-Agent."""
+"""Command line interface for the RL-KG-Agent with TorchRL support."""
 
 import click
 import logging
@@ -6,14 +6,16 @@ import sys
 from pathlib import Path
 from typing import Optional
 import json
+import warnings
 
 from .knowledge.kg_loader import KnowledgeGraphLoader, SPARQLQueryGenerator
 from .knowledge.internal_kg import InternalKnowledgeGraph
 from .actions.action_manager import ActionManager
-from .agents.ppo_agent import PPOKGAgent
+from .agents.ppo_agent import PPOKGAgent, create_environment, create_action_executor
 from .utils.reward_calculator import RewardCalculator
 from .data.dataset_loader import QADatasetLoader
 from .utils.llm_client import LLMClient
+from .config import Config, ConfigManager, get_config, is_torchrl_enabled, validate_torchrl_config
 
 
 # Configure logging
@@ -27,9 +29,11 @@ logger = logging.getLogger(__name__)
 @click.group()
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 @click.option('--config', '-c', type=str, help='Configuration file path')
+@click.option('--use-torchrl', is_flag=True, help='Enable TorchRL features (requires torchrl[llm])')
+@click.option('--torchrl-device', type=click.Choice(['auto', 'cpu', 'cuda']), default='auto', help='Device for TorchRL operations')
 @click.pass_context
-def cli(ctx, verbose, config):
-    """RL-KG-Agent: Reinforcement Learning Agent for Knowledge Graph Reasoning."""
+def cli(ctx, verbose, config, use_torchrl, torchrl_device):
+    """RL-KG-Agent: Reinforcement Learning Agent for Knowledge Graph Reasoning with optional TorchRL support."""
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -38,10 +42,34 @@ def cli(ctx, verbose, config):
 
     # Load configuration if provided
     if config and Path(config).exists():
-        with open(config, 'r') as f:
-            ctx.obj['config'] = json.load(f)
+        try:
+            loaded_config = ConfigManager.load_config(config)
+            ctx.obj['config'] = loaded_config
+        except Exception as e:
+            logger.error(f"Failed to load config from {config}: {e}")
+            ctx.obj['config'] = Config()
     else:
-        ctx.obj['config'] = {}
+        ctx.obj['config'] = get_config()
+
+    # Override TorchRL settings from command line
+    if use_torchrl:
+        ctx.obj['config'].torchrl.enabled = True
+        ctx.obj['config'].torchrl.device = torchrl_device
+        
+        # Validate TorchRL configuration
+        is_valid, errors = validate_torchrl_config(ctx.obj['config'])
+        if not is_valid:
+            logger.warning("TorchRL configuration issues detected:")
+            for error in errors:
+                logger.warning(f"  - {error}")
+            
+            # Ask user if they want to continue
+            if not click.confirm("Continue with potential issues?"):
+                ctx.exit(1)
+    
+    # Store CLI flags
+    ctx.obj['use_torchrl'] = use_torchrl
+    ctx.obj['verbose'] = verbose
 
 
 @cli.command()
@@ -49,10 +77,20 @@ def cli(ctx, verbose, config):
 @click.option('--model-path', '-m', type=str, help='Path to pre-trained model (optional)')
 @click.option('--max-steps', default=5, help='Maximum steps per query')
 @click.option('--save-interactions', is_flag=True, help='Save interactions to internal KG')
+@click.option('--enable-tools', is_flag=True, help='Enable TorchRL tool enhancements for this session')
 @click.pass_context
-def interactive(ctx, ttl_file, model_path, max_steps, save_interactions):
-    """Start interactive mode for querying the agent."""
+def interactive(ctx, ttl_file, model_path, max_steps, save_interactions, enable_tools):
+    """Start interactive mode for querying the agent with optional TorchRL enhancements."""
     try:
+        config = ctx.obj.get('config', Config())
+        use_torchrl = ctx.obj.get('use_torchrl', False) or enable_tools
+        
+        # Show configuration status
+        if use_torchrl:
+            click.echo("🔧 TorchRL mode enabled - Enhanced tool capabilities active")
+        else:
+            click.echo("📊 Standard mode - Using stable PPO training")
+        
         # Initialize components
         click.echo("🚀 Initializing RL-KG-Agent...")
 
@@ -67,14 +105,36 @@ def interactive(ctx, ttl_file, model_path, max_steps, save_interactions):
         # Initialize LLM client (placeholder)
         llm_client = LLMClient()
 
-        # Initialize action manager
+        # Initialize action manager (potentially enhanced)
         action_manager = ActionManager(kg_loader, sparql_generator, internal_kg, llm_client)
+        enhanced_action_manager = create_action_executor(
+            action_manager=action_manager,
+            kg_loader=kg_loader,
+            internal_kg=internal_kg,
+            llm_client=llm_client,
+            config=config,
+            use_torchrl=use_torchrl
+        )
 
         # Initialize reward calculator
         reward_calculator = RewardCalculator()
 
-        # Initialize PPO agent
-        agent = PPOKGAgent(action_manager, reward_calculator, internal_kg)
+        # Create environment (potentially TorchRL-enhanced)
+        environment = create_environment(
+            action_manager=enhanced_action_manager,
+            reward_calculator=reward_calculator,
+            internal_kg=internal_kg,
+            kg_loader=kg_loader,
+            config=config,
+            use_torchrl=use_torchrl,
+            max_steps=max_steps
+        )
+
+        # Initialize PPO agent with enhanced environment
+        if use_torchrl:
+            click.echo("✨ Using TorchRL-enhanced environment with tool capabilities")
+        
+        agent = PPOKGAgent(enhanced_action_manager, reward_calculator, internal_kg)
 
         # Load pre-trained model if provided
         if model_path and Path(model_path).exists():
@@ -145,14 +205,161 @@ def interactive(ctx, ttl_file, model_path, max_steps, save_interactions):
 
 
 @cli.command()
+@click.option('--output', '-o', type=str, default='rl_kg_agent_config.json', help='Output configuration file path')
+@click.option('--enable-torchrl', is_flag=True, help='Enable TorchRL features in generated config')
+@click.option('--with-examples', is_flag=True, help='Include example settings and comments')
+def init_config(output, enable_torchrl, with_examples):
+    """Initialize a configuration file with default or example settings."""
+    try:
+        if with_examples:
+            ConfigManager.create_example_config(output)
+        else:
+            config = Config()
+            if enable_torchrl:
+                config.torchrl.enabled = True
+                config.torchrl.enable_tool_enhancement = True
+                click.echo("✅ TorchRL features enabled in configuration")
+            
+            ConfigManager.save_config(config, output)
+        
+        click.echo(f"📝 Configuration file created: {output}")
+        
+        # Validate the created config
+        config = ConfigManager.load_config(output)
+        is_valid, errors = validate_torchrl_config(config)
+        
+        if not is_valid:
+            click.echo("⚠️  Configuration validation warnings:")
+            for error in errors:
+                click.echo(f"   - {error}")
+        else:
+            click.echo("✅ Configuration is valid")
+            
+    except Exception as e:
+        logger.error(f"Failed to create configuration: {e}")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--config-file', '-c', type=str, help='Configuration file to validate')
+def validate_config(config_file):
+    """Validate a configuration file."""
+    try:
+        if config_file:
+            config = ConfigManager.load_config(config_file)
+        else:
+            config = get_config()
+            config_file = "default configuration"
+        
+        click.echo(f"🔍 Validating {config_file}...")
+        
+        # General validation
+        click.echo(f"✅ Basic configuration loaded successfully")
+        
+        # TorchRL validation
+        is_valid, errors = validate_torchrl_config(config)
+        
+        if config.torchrl.enabled:
+            if is_valid:
+                click.echo("✅ TorchRL configuration is valid")
+                
+                # Check dependencies
+                from .config import check_torchrl_dependencies
+                if check_torchrl_dependencies():
+                    click.echo("✅ TorchRL dependencies are available")
+                else:
+                    click.echo("⚠️  TorchRL dependencies not found. Install with: pip install 'torchrl[llm]'")
+            else:
+                click.echo("❌ TorchRL configuration has issues:")
+                for error in errors:
+                    click.echo(f"   - {error}")
+        else:
+            click.echo("ℹ️  TorchRL features are disabled")
+        
+        # Summary
+        click.echo("\\n📊 Configuration Summary:")
+        click.echo(f"   TorchRL enabled: {config.torchrl.enabled}")
+        click.echo(f"   Tool enhancement: {config.torchrl.enable_tool_enhancement}")
+        click.echo(f"   Device: {config.torchrl.device}")
+        click.echo(f"   Max steps: {config.environment_config.get('max_steps', 10)}")
+        
+    except Exception as e:
+        logger.error(f"Configuration validation failed: {e}")
+        sys.exit(1)
+
+
+@cli.command()
+def check_deps():
+    """Check system dependencies for TorchRL features."""
+    click.echo("🔍 Checking system dependencies...")
+    
+    # Check Python version
+    import sys
+    click.echo(f"✅ Python {sys.version}")
+    
+    # Check core dependencies
+    deps_status = {}
+    
+    try:
+        import torch
+        deps_status['PyTorch'] = f"✅ {torch.__version__}"
+    except ImportError:
+        deps_status['PyTorch'] = "❌ Not installed"
+    
+    try:
+        import torchrl
+        deps_status['TorchRL'] = f"✅ {torchrl.__version__}"
+    except ImportError:
+        deps_status['TorchRL'] = "❌ Not installed"
+    
+    try:
+        from tensordict import TensorDict
+        deps_status['TensorDict'] = "✅ Available"
+    except ImportError:
+        deps_status['TensorDict'] = "❌ Not installed"
+    
+    try:
+        from transformers import AutoTokenizer
+        deps_status['Transformers'] = "✅ Available"
+    except ImportError:
+        deps_status['Transformers'] = "❌ Not installed"
+    
+    try:
+        import playwright
+        deps_status['Playwright'] = "✅ Available (for browser tools)"
+    except ImportError:
+        deps_status['Playwright'] = "⚠️  Not installed (optional for browser tools)"
+    
+    # Display results
+    click.echo("\\n📦 Dependencies Status:")
+    for dep, status in deps_status.items():
+        click.echo(f"   {dep}: {status}")
+    
+    # Installation guidance
+    click.echo("\\n📋 Installation Guide:")
+    click.echo("   Core TorchRL features: pip install 'torchrl[llm]'")
+    click.echo("   Browser tools (optional): pip install playwright && playwright install")
+    
+    # Overall status
+    core_deps = ['PyTorch', 'TorchRL', 'TensorDict', 'Transformers']
+    core_available = all('✅' in deps_status.get(dep, '') for dep in core_deps)
+    
+    if core_available:
+        click.echo("\\n✅ All core dependencies available for TorchRL features!")
+    else:
+        click.echo("\\n⚠️  Some core dependencies missing. TorchRL features may not work.")
+
+
+@cli.command()
 @click.option('--ttl-file', '-t', type=str, required=True, help='Path to TTL knowledge graph file')
 @click.option('--dataset', '-d', type=str, default="squad", help='Dataset to use (squad, natural_questions, ms_marco)')
 @click.option('--episodes', '-e', type=int, default=1000, help='Number of training episodes')
 @click.option('--output-model', '-o', type=str, default="trained_model", help='Output path for trained model')
 @click.option('--sample-size', type=int, help='Limit dataset size for faster training')
 @click.option('--visualize', is_flag=True, help='Show live training visualization dashboard')
+@click.option('--use-torchrl-env', is_flag=True, help='Use TorchRL environment for training')
 @click.pass_context
-def train(ctx, ttl_file, dataset, episodes, output_model, sample_size, visualize):
+def train(ctx, ttl_file, dataset, episodes, output_model, sample_size, visualize, use_torchrl_env):
     """Train the RL agent using QA datasets."""
     try:
         click.echo("🎯 Starting training...")

@@ -1,4 +1,4 @@
-"""PPO agent for knowledge graph reasoning with memory capabilities."""
+"""PPO agent for knowledge graph reasoning with memory capabilities and optional TorchRL support."""
 
 import torch
 import torch.nn as nn
@@ -10,8 +10,21 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import BaseCallback
 from typing import Dict, List, Any, Tuple, Optional
 import logging
+import warnings
 from dataclasses import dataclass
 from ..actions.action_space import ActionType
+from ..config import Config, get_config, is_torchrl_enabled
+
+# TorchRL imports with fallback
+try:
+    from ..envs.torchrl_kg_env import TorchRLKnowledgeGraphEnv, create_kg_environment
+    from ..execution.torchrl_action_executor import TorchRLActionExecutor
+    TORCHRL_AVAILABLE = True
+except ImportError as e:
+    warnings.warn(f"TorchRL components not available: {e}")
+    TORCHRL_AVAILABLE = False
+    TorchRLKnowledgeGraphEnv = None
+    TorchRLActionExecutor = None
 
 
 logger = logging.getLogger(__name__)
@@ -345,6 +358,158 @@ class KGReasoningEnvironment(gym.Env):
             logger.warning(f"Failed to extract internal KG features: {e}")
 
         return features
+
+
+def create_environment(
+    action_manager,
+    reward_calculator, 
+    internal_kg,
+    kg_loader=None,
+    config: Optional[Config] = None,
+    use_torchrl: Optional[bool] = None,
+    **kwargs
+):
+    """
+    Factory function to create KG environment with optional TorchRL support.
+    
+    This function maintains backward compatibility while allowing opt-in
+    TorchRL features for enhanced capabilities.
+    
+    Args:
+        action_manager: Action manager for executing actions
+        reward_calculator: Reward calculator for environment feedback
+        internal_kg: Internal knowledge graph for memory
+        kg_loader: Knowledge graph loader (required for TorchRL features)
+        config: Configuration object, loaded from file if not provided
+        use_torchrl: Override config setting for TorchRL usage
+        **kwargs: Additional arguments passed to environment
+        
+    Returns:
+        Environment instance (TorchRL-enhanced or standard)
+    """
+    # Load config if not provided
+    if config is None:
+        config = get_config()
+    
+    # Determine if TorchRL should be used
+    if use_torchrl is None:
+        use_torchrl = is_torchrl_enabled(config)
+    
+    # Check TorchRL availability
+    if use_torchrl and not TORCHRL_AVAILABLE:
+        warnings.warn(
+            "TorchRL requested but not available. "
+            "Install with: pip install 'torchrl[llm]'. "
+            "Falling back to standard environment."
+        )
+        use_torchrl = False
+    
+    if use_torchrl:
+        logger.info("Creating TorchRL-enhanced environment")
+        
+        try:
+            # Create TorchRL environment with enhanced features
+            env = TorchRLKnowledgeGraphEnv(
+                kg_loader=kg_loader,
+                action_manager=action_manager,
+                reward_calculator=reward_calculator,
+                internal_kg=internal_kg,
+                tokenizer_name=config.torchrl.tokenizer_name,
+                max_steps=config.environment_config.get("max_steps", 10),
+                device=config.torchrl.device,
+                enable_tools=config.torchrl.enable_tool_enhancement,
+                **kwargs
+            )
+            
+            # Add transforms if enabled
+            if config.torchrl.enable_tool_enhancement:
+                from ..transforms.kg_transform import KnowledgeGraphTransform
+                from ..transforms.hybrid_reward_transform import HybridRewardTransform
+                
+                # Add KG transform
+                kg_transform = KnowledgeGraphTransform(
+                    kg_loader=kg_loader,
+                    internal_kg=internal_kg,
+                    enable_sparql_tools=config.torchrl.enable_enhanced_sparql
+                )
+                env.append_transform(kg_transform)
+                
+                # Add hybrid reward transform
+                reward_transform = HybridRewardTransform(
+                    base_reward_calculator=reward_calculator,
+                    tool_success_weight=config.torchrl.tool_success_weight,
+                    knowledge_gain_weight=config.torchrl.knowledge_gain_weight,
+                    efficiency_weight=config.torchrl.efficiency_weight,
+                    enable_detailed_logging=config.torchrl.enable_detailed_logging
+                )
+                env.append_transform(reward_transform)
+                
+                logger.info("TorchRL transforms added successfully")
+            
+            return env
+            
+        except Exception as e:
+            logger.error(f"Failed to create TorchRL environment: {e}")
+            logger.info("Falling back to standard environment")
+            use_torchrl = False
+    
+    if not use_torchrl:
+        logger.info("Creating standard KG environment")
+        
+        # Create standard environment with backward compatibility
+        return KGReasoningEnvironment(
+            action_manager=action_manager,
+            reward_calculator=reward_calculator,
+            internal_kg=internal_kg,
+            max_steps=config.environment_config.get("max_steps", 10),
+            **kwargs
+        )
+
+
+def create_action_executor(
+    action_manager,
+    kg_loader=None,
+    internal_kg=None,
+    llm_client=None,
+    config: Optional[Config] = None,
+    use_torchrl: Optional[bool] = None
+):
+    """
+    Factory function to create action executor with optional TorchRL enhancement.
+    
+    Args:
+        action_manager: Base action manager
+        kg_loader: Knowledge graph loader
+        internal_kg: Internal knowledge graph
+        llm_client: LLM client for enhanced responses
+        config: Configuration object
+        use_torchrl: Override config setting for TorchRL usage
+        
+    Returns:
+        Action executor (enhanced or standard)
+    """
+    # Load config if not provided
+    if config is None:
+        config = get_config()
+    
+    # Determine if TorchRL should be used
+    if use_torchrl is None:
+        use_torchrl = is_torchrl_enabled(config) and config.torchrl.enable_tool_enhancement
+    
+    if use_torchrl and TORCHRL_AVAILABLE:
+        logger.info("Creating TorchRL-enhanced action executor")
+        
+        return TorchRLActionExecutor(
+            action_manager=action_manager,
+            kg_loader=kg_loader,
+            internal_kg=internal_kg,
+            llm_client=llm_client,
+            enable_tool_enhancement=config.torchrl.enable_tool_enhancement,
+            tool_timeout=config.torchrl.tool_timeout
+        )
+    else:
+        logger.info("Using standard action manager")
+        return action_manager
 
 
 class PPOKGAgent:

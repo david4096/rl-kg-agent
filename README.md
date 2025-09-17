@@ -6,10 +6,12 @@ A Reinforcement Learning agent for Knowledge Graph reasoning that combines stati
 
 - **Multi-modal Knowledge Access**: Integrates static RDF/TTL knowledge graphs with dynamic internal knowledge graph memory
 - **Reinforcement Learning**: Uses PPO (Proximal Policy Optimization) for learning optimal question-answering strategies
+- **TorchRL Integration**: Optional advanced RL framework with composable transforms and tool execution (experimental)
 - **Rich Action Space**: 5 core actions including SPARQL queries, LLM responses, knowledge storage, clarifying questions, and planning
 - **Semantic Reward System**: Uses sentence transformers for semantic similarity-based rewards
 - **Long-term Memory**: Builds and maintains an internal knowledge graph of learned information
 - **HuggingFace Integration**: Supports training on popular QA datasets (SQuAD, Natural Questions, MS MARCO)
+- **Backward Compatibility**: All new features are optional and existing functionality remains unchanged
 
 ## Installation
 
@@ -77,6 +79,21 @@ Train the RL agent on a QA dataset:
 uv run rl-kg-agent train --ttl-file path/to/your/knowledge_graph.ttl --dataset squad --episodes 1000 --output-model trained_model
 ```
 
+#### With TorchRL (Experimental)
+
+To use the experimental TorchRL framework for enhanced tool execution and composable transforms:
+
+```bash
+# First, install TorchRL dependencies
+uv add torch torchrl tensordict transformers playwright
+
+# Initialize TorchRL configuration
+uv run rl-kg-agent init-config --output-path rl_kg_config.json
+
+# Train with TorchRL environment
+uv run rl-kg-agent train --ttl-file path/to/your/knowledge_graph.ttl --dataset squad --episodes 1000 --output-model trained_model --use-torchrl-env --config rl_kg_config.json
+```
+
 ### 3. Evaluation
 
 Evaluate a trained model:
@@ -136,6 +153,8 @@ make run-eval TTL_FILE=path/to/your/knowledge_graph.ttl MODEL_PATH=trained_model
 
 ## Configuration
 
+### Basic Configuration
+
 Create a configuration file to customize behavior:
 
 ```json
@@ -154,6 +173,54 @@ Create a configuration file to customize behavior:
   }
 }
 ```
+
+### TorchRL Configuration (Experimental)
+
+The TorchRL integration adds advanced features through a separate configuration section:
+
+```bash
+# Generate example configuration
+rl-kg-agent init-config --output-path rl_kg_config.json
+
+# Validate configuration
+rl-kg-agent validate-config --config-path rl_kg_config.json
+
+# Check TorchRL dependencies
+rl-kg-agent check-deps
+```
+
+Example TorchRL configuration:
+
+```json
+{
+  "torchrl": {
+    "enabled": true,
+    "tool_success_weight": 0.3,
+    "tool_failure_penalty": -0.1,
+    "conversation_bonus": 0.05,
+    "environment": {
+      "max_conversation_length": 50,
+      "episode_timeout": 300
+    },
+    "transforms": {
+      "kg_transform_enabled": true,
+      "hybrid_reward_enabled": true
+    }
+  }
+}
+```
+
+### TorchRL Features
+
+When enabled, TorchRL provides:
+
+- **Enhanced Action Execution**: Tool-based action execution with better introspection
+- **Composable Transforms**: Modular transforms for knowledge graph operations and reward calculation
+- **Advanced Reward System**: Multi-component rewards combining semantic similarity with tool success metrics
+- **Conversation Management**: Enhanced chat history and conversation state management
+- **Performance Metrics**: Detailed execution metrics and performance tracking
+
+**Note**: TorchRL features are experimental and require additional dependencies. The standard PPO implementation remains the default and recommended approach for most use cases.
 
 ## Dataset Support
 
