@@ -1,0 +1,54 @@
+@prefix ex: <http://example.org/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+# Countries and Capitals
+ex:France rdfs:label "France" ;
+          rdf:type ex:Country ;
+          ex:hasCapital ex:Paris ;
+          ex:population 67000000 ;
+          ex:continent ex:Europe .
+
+ex:Paris rdfs:label "Paris" ;
+         rdf:type ex:City ;
+         ex:isCapitalOf ex:France ;
+         ex:population 2200000 .
+
+ex:Germany rdfs:label "Germany" ;
+           rdf:type ex:Country ;
+           ex:hasCapital ex:Berlin ;
+           ex:population 83000000 ;
+           ex:continent ex:Europe .
+
+ex:Berlin rdfs:label "Berlin" ;
+          rdf:type ex:City ;
+          ex:isCapitalOf ex:Germany ;
+          ex:population 3700000 .
+
+ex:Japan rdfs:label "Japan" ;
+         rdf:type ex:Country ;
+         ex:hasCapital ex:Tokyo ;
+         ex:population 125000000 ;
+         ex:continent ex:Asia .
+
+ex:Tokyo rdfs:label "Tokyo" ;
+         rdf:type ex:City ;
+         ex:isCapitalOf ex:Japan ;
+         ex:population 14000000 .
+
+# Continents
+ex:Europe rdfs:label "Europe" ;
+          rdf:type ex:Continent .
+
+ex:Asia rdfs:label "Asia" ;
+        rdf:type ex:Continent .
+
+# Some additional facts
+ex:France ex:language "French" ;
+          ex:currency "Euro" .
+
+ex:Germany ex:language "German" ;
+           ex:currency "Euro" .
+
+ex:Japan ex:language "Japanese" ;
+         ex:currency "Yen" .

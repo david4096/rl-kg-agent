@@ -19,7 +19,7 @@
     "timeout": 120
   },
   "torchrl": {
-    "enabled": false,
+    "enabled": true,
     "tokenizer_name": "microsoft/DialoGPT-medium",
     "device": "auto",
     "batch_size": [
@@ -43,22 +43,5 @@
     "max_history_size": 1000,
     "enable_caching": true,
     "log_execution_metrics": true
-  },
-  "mcp": {
-    "enabled": true,
-    "config_file": "configs/mcp_config.json",
-    "default_server": "unified_biomedical",
-    "connection_timeout": 30.0,
-    "retry_attempts": 3,
-    "retry_delay": 1.0,
-    "max_concurrent_requests": 5,
-    "prefer_rag_for_questions": true,
-    "prefer_search_for_entities": true,
-    "enable_entity_lookup": true,
-    "default_candidates": 20,
-    "enable_biomedical_enhancement": true,
-    "auto_detect_biomedical_queries": true,
-    "fallback_on_error": true,
-    "cache_responses": true
   }
 }

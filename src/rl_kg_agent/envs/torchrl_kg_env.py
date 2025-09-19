@@ -114,8 +114,9 @@ class TorchRLKnowledgeGraphEnv(ChatEnv if TORCHRL_AVAILABLE else object):
     
     def _setup_spaces(self):
         """Set up action and observation spaces maintaining PPO compatibility."""
-        # CRITICAL: Maintain the exact same 5-action discrete space
-        self.action_space = gym.spaces.Discrete(5)
+        # CRITICAL: Use dynamic action space based on available actions
+        num_actions = len(self.action_manager.actions) if hasattr(self.action_manager, 'actions') else 5
+        self.action_space = gym.spaces.Discrete(num_actions)
         
         # Enhanced observation space that includes tool context
         self.observation_space = gym.spaces.Dict({
@@ -142,6 +143,9 @@ class TorchRLKnowledgeGraphEnv(ChatEnv if TORCHRL_AVAILABLE else object):
     
     def _setup_torchrl_specs(self):
         """Set up TorchRL-specific specs."""
+        # Get dynamic action count
+        num_actions = len(self.action_manager.actions) if hasattr(self.action_manager, 'actions') else 5
+        
         # Input spec includes query and context
         self.input_spec = CompositeSpec({
             "query": Unbounded(shape=(1,), dtype=torch.object),
@@ -151,7 +155,7 @@ class TorchRLKnowledgeGraphEnv(ChatEnv if TORCHRL_AVAILABLE else object):
         # Output spec includes response and metadata
         self.output_spec = CompositeSpec({
             "response": Unbounded(shape=(1,), dtype=torch.object),
-            "action_taken": Bounded(low=0, high=4, shape=(1,), dtype=torch.long),
+            "action_taken": Bounded(low=0, high=num_actions-1, shape=(1,), dtype=torch.long),
             "success": Bounded(low=0, high=1, shape=(1,), dtype=torch.bool),
             "confidence": Bounded(low=0.0, high=1.0, shape=(1,), dtype=torch.float32),
         })
@@ -167,7 +171,14 @@ class TorchRLKnowledgeGraphEnv(ChatEnv if TORCHRL_AVAILABLE else object):
         self.current_query = ""
         self.current_context = {}
         
-        # Extract query from tensordict if provided
+        # Call agent's reset method to setup next training example
+        if hasattr(self, 'agent') and self.agent:
+            self.agent.reset()
+            # Get the query from the agent after it sets up the next training example
+            if hasattr(self.agent, 'current_context') and 'query' in self.agent.current_context:
+                self.current_query = self.agent.current_context['query']
+        
+        # Extract query from tensordict if provided (this overrides agent query)
         if tensordict is not None and "query" in tensordict:
             self.current_query = tensordict["query"][0] if hasattr(tensordict["query"], '__getitem__') else str(tensordict["query"])
         
@@ -195,8 +206,8 @@ class TorchRLKnowledgeGraphEnv(ChatEnv if TORCHRL_AVAILABLE else object):
             action_id = int(action)
             
         # Validate action
-        if not 0 <= action_id <= 4:
-            raise ValueError(f"Invalid action {action_id}. Must be in range [0, 4]")
+        if not 0 <= action_id < len(self.action_manager.actions):
+            raise ValueError(f"Invalid action {action_id}. Must be in range [0, {len(self.action_manager.actions) - 1}]")
         
         # Map action ID to ActionType
         action_type = ActionType(action_id)

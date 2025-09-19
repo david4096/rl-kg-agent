@@ -118,10 +118,21 @@ def main():
                 print(f"   Total Reward: {result['total_reward']:.3f}")
                 print(f"   Steps Taken: {result['final_step']}")
 
-                # Show action sequence
+                # Show action sequence with responses
                 for step in result['steps_taken']:
                     status = "✅" if step['success'] else "❌"
-                    print(f"   {status} {step['action']} (reward: {step['reward']:.3f})")
+                    action_name = step['action']
+                    response = step.get('response', '')
+                    
+                    print(f"   {status} {action_name} (reward: {step['reward']:.3f})")
+                    
+                    # Show LLM response (truncated to avoid too much output)
+                    if response:
+                        # Truncate long responses and show first part
+                        display_response = response[:200] + "..." if len(response) > 200 else response
+                        print(f"      💬 Response: {display_response}")
+                    else:
+                        print(f"      ⚠️  No response available")
 
             except Exception as e:
                 print(f"   ❌ Episode failed: {e}")

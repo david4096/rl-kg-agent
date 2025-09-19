@@ -70,7 +70,7 @@ class TestRewardCalculator:
         """Test initialization."""
         assert reward_calculator.model_name == "all-MiniLM-L6-v2"
         assert reward_calculator.sentence_transformer is not None
-        assert len(reward_calculator.weights) == 5
+        assert len(reward_calculator.weights) == 6
 
     def test_calculate_reward_successful(self, reward_calculator, sample_context, successful_action_result):
         """Test reward calculation for successful action."""

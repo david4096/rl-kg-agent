@@ -42,6 +42,10 @@ class TestBackwardCompatibility:
             metadata={"action": "test"},
             confidence=0.8
         )
+        # Mock get_applicable_actions to return a list of actions
+        self.mock_action_manager.get_applicable_actions.return_value = [
+            ActionType.RESPOND_DIRECTLY, ActionType.QUERY_KG_THEN_RESPOND, ActionType.PLAN_THEN_RESPOND
+        ]
         
         self.mock_reward_calculator.calculate_reward.return_value = 0.5
         self.mock_internal_kg.size.return_value = 10
@@ -137,6 +141,11 @@ class TestTorchRLIntegration:
         self.mock_internal_kg = Mock()
         self.mock_kg_loader = Mock()
         self.mock_llm_client = Mock()
+        
+        # Mock get_applicable_actions to return a list of actions
+        self.mock_action_manager.get_applicable_actions.return_value = [
+            ActionType.RESPOND_DIRECTLY, ActionType.QUERY_KG_THEN_RESPOND, ActionType.PLAN_THEN_RESPOND
+        ]
     
     @pytest.mark.skipif(
         not _torchrl_available(),
@@ -236,6 +245,11 @@ class TestIntegrationSafety:
             mock_action_manager = Mock()
             mock_reward_calculator = Mock()
             mock_internal_kg = Mock()
+            
+            # Mock get_applicable_actions to return a list of actions
+            mock_action_manager.get_applicable_actions.return_value = [
+                ActionType.RESPOND_DIRECTLY, ActionType.QUERY_KG_THEN_RESPOND, ActionType.PLAN_THEN_RESPOND
+            ]
             
             config = Config()
             config.torchrl.enabled = True  # Request TorchRL

@@ -2,9 +2,9 @@
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import tkinter as tk
-from tkinter import ttk
+# Use non-GUI backend for macOS compatibility
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 import threading
 import time
 import queue
@@ -13,6 +13,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import numpy as np
 from dataclasses import dataclass
 import logging
+import os
 
 
 logger = logging.getLogger(__name__)
@@ -83,18 +84,22 @@ class TrainingDashboard:
     def start_dashboard(self):
         """Start the dashboard GUI."""
         self.running = True
+        
+        # Create output directory for plots
+        os.makedirs("training_plots", exist_ok=True)
+        
+        # Create plots using matplotlib with file output
+        self._create_plots_file_based()
+        
+        # Start update thread
+        update_thread = threading.Thread(target=self._update_loop, daemon=True)
+        update_thread.start()
 
-        # Create GUI in separate thread
-        gui_thread = threading.Thread(target=self._create_gui, daemon=True)
-        gui_thread.start()
-
-        logger.info("Training dashboard started")
+        logger.info("Training dashboard started (file-based plotting for macOS compatibility)")
 
     def stop_dashboard(self):
         """Stop the dashboard."""
         self.running = False
-        if self.root:
-            self.root.quit()
         logger.info("Training dashboard stopped")
 
     def update_training_metrics(self, metrics: TrainingMetrics):
@@ -119,6 +124,135 @@ class TrainingDashboard:
                 self.kg_queue.put(metrics, block=False)
             except queue.Empty:
                 pass
+
+    def _create_plots_file_based(self):
+        """Create plots using file-based output for macOS compatibility."""
+        self.fig, self.axes = plt.subplots(3, 3, figsize=(15, 12))
+        self.fig.suptitle('RL-KG-Agent Training Dashboard', fontsize=16)
+        
+        # Initialize subplot titles
+        subplot_titles = [
+            'Episode Rewards', 'Policy Loss', 'Value Loss',
+            'Episode Length', 'Success Rate', 'Learning Rate', 
+            'Action Distribution', 'KG Growth', 'Performance Summary'
+        ]
+        
+        for i, ax in enumerate(self.axes.flat):
+            if i < len(subplot_titles):
+                ax.set_title(subplot_titles[i])
+                ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+
+    def _update_loop(self):
+        """Update loop for file-based plotting."""
+        last_update = time.time()
+        
+        while self.running:
+            current_time = time.time()
+            
+            # Update every 5 seconds
+            if current_time - last_update >= 5.0:
+                self._process_queues()
+                self._update_plots_file_based()
+                last_update = current_time
+            
+            time.sleep(1.0)
+
+    def _process_queues(self):
+        """Process data from queues."""
+        # Process training metrics
+        while True:
+            try:
+                metrics = self.training_queue.get_nowait()
+                self.training_data.append(metrics)
+                self.current_episode = metrics.episode
+            except queue.Empty:
+                break
+        
+        # Process KG metrics
+        while True:
+            try:
+                metrics = self.kg_queue.get_nowait()
+                self.kg_data.append(metrics)
+            except queue.Empty:
+                break
+
+    def _update_plots_file_based(self):
+        """Update plots and save to file."""
+        if not self.training_data:
+            return
+        
+        # Clear all axes
+        for ax in self.axes.flat:
+            ax.clear()
+        
+        # Extract data
+        episodes = [m.episode for m in self.training_data]
+        rewards = [m.reward for m in self.training_data]
+        policy_losses = [m.policy_loss for m in self.training_data]
+        value_losses = [m.value_loss for m in self.training_data]
+        episode_lengths = [m.episode_length for m in self.training_data]
+        success_rates = [m.success_rate for m in self.training_data]
+        learning_rates = [m.learning_rate for m in self.training_data]
+        
+        # Plot data
+        self.axes[0, 0].plot(episodes, rewards, 'b-', alpha=0.7)
+        self.axes[0, 0].set_title('Episode Rewards')
+        self.axes[0, 0].set_xlabel('Episode')
+        self.axes[0, 0].set_ylabel('Reward')
+        self.axes[0, 0].grid(True, alpha=0.3)
+        
+        self.axes[0, 1].plot(episodes, policy_losses, 'r-', alpha=0.7)
+        self.axes[0, 1].set_title('Policy Loss')
+        self.axes[0, 1].set_xlabel('Episode')
+        self.axes[0, 1].set_ylabel('Loss')
+        self.axes[0, 1].grid(True, alpha=0.3)
+        
+        self.axes[0, 2].plot(episodes, value_losses, 'g-', alpha=0.7)
+        self.axes[0, 2].set_title('Value Loss')
+        self.axes[0, 2].set_xlabel('Episode')
+        self.axes[0, 2].set_ylabel('Loss')
+        self.axes[0, 2].grid(True, alpha=0.3)
+        
+        self.axes[1, 0].plot(episodes, episode_lengths, 'm-', alpha=0.7)
+        self.axes[1, 0].set_title('Episode Length')
+        self.axes[1, 0].set_xlabel('Episode')
+        self.axes[1, 0].set_ylabel('Steps')
+        self.axes[1, 0].grid(True, alpha=0.3)
+        
+        self.axes[1, 1].plot(episodes, success_rates, 'c-', alpha=0.7)
+        self.axes[1, 1].set_title('Success Rate')
+        self.axes[1, 1].set_xlabel('Episode')
+        self.axes[1, 1].set_ylabel('Rate')
+        self.axes[1, 1].grid(True, alpha=0.3)
+        
+        self.axes[1, 2].plot(episodes, learning_rates, 'orange', alpha=0.7)
+        self.axes[1, 2].set_title('Learning Rate')
+        self.axes[1, 2].set_xlabel('Episode')
+        self.axes[1, 2].set_ylabel('Rate')
+        self.axes[1, 2].grid(True, alpha=0.3)
+        
+        # Summary stats in bottom row
+        if len(rewards) > 0:
+            recent_rewards = rewards[-min(100, len(rewards)):]
+            avg_reward = np.mean(recent_rewards)
+            self.axes[2, 0].text(0.1, 0.8, f'Current Episode: {self.current_episode}', transform=self.axes[2, 0].transAxes)
+            self.axes[2, 0].text(0.1, 0.6, f'Avg Reward (last 100): {avg_reward:.2f}', transform=self.axes[2, 0].transAxes)
+            self.axes[2, 0].text(0.1, 0.4, f'Total Episodes: {len(self.training_data)}', transform=self.axes[2, 0].transAxes)
+            self.axes[2, 0].text(0.1, 0.2, f'Runtime: {time.time() - self.start_time:.1f}s', transform=self.axes[2, 0].transAxes)
+            self.axes[2, 0].set_title('Training Summary')
+            self.axes[2, 0].set_xlim(0, 1)
+            self.axes[2, 0].set_ylim(0, 1)
+            self.axes[2, 0].axis('off')
+        
+        plt.tight_layout()
+        
+        # Save plot
+        plot_file = "training_plots/training_dashboard.png"
+        plt.savefig(plot_file, dpi=150, bbox_inches='tight')
+        
+        logger.info(f"Training plots updated: {plot_file} (Episode {self.current_episode})")
 
     def _create_gui(self):
         """Create the GUI interface."""

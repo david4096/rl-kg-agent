@@ -91,7 +91,7 @@ uv add torch torchrl tensordict transformers playwright
 uv run rl-kg-agent init-config --output-path rl_kg_config.json
 
 # Train with TorchRL environment
-uv run rl-kg-agent train --ttl-file path/to/your/knowledge_graph.ttl --dataset squad --episodes 1000 --output-model trained_model --use-torchrl-env --config rl_kg_config.json
+uv run rl-kg-agent train --ttl-file /Users/markstreer/rl-kg-agent/test-knowledge_graph.ttl --dataset squad --episodes 1000 --output-model trained_model --use-torchrl-env --config rl_kg_config.json
 ```
 
 ### 3. Evaluation

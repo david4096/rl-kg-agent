@@ -5,7 +5,7 @@ import logging
 from .action_space import (
     ActionType, ActionResult, BaseAction,
     RespondDirectlyAction, QueryKGThenRespondAction, PlanThenRespondAction,
-    AskClarifyingQuestionAction, StoreAndRespondAction
+    AskClarifyingQuestionAction, StoreAndRespondAction, QueryMCPThenRespondAction
 )
 
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class ActionManager:
     """Manages and coordinates available actions for the RL agent."""
 
-    def __init__(self, kg_loader, sparql_generator, internal_kg, llm_client):
+    def __init__(self, kg_loader, sparql_generator, internal_kg, llm_client, mcp_manager=None):
         """Initialize action manager with required dependencies.
 
         Args:
@@ -23,10 +23,12 @@ class ActionManager:
             sparql_generator: SPARQL query generator instance
             internal_kg: Internal knowledge graph instance
             llm_client: LLM client for text generation
+            mcp_manager: MCP manager for biomedical queries (optional)
         """
         self.kg_loader = kg_loader
         self.internal_kg = internal_kg
         self.llm_client = llm_client
+        self.mcp_manager = mcp_manager
 
         # Initialize all actions - each always ends with user response
         self.actions: Dict[ActionType, BaseAction] = {
@@ -34,8 +36,12 @@ class ActionManager:
             ActionType.QUERY_KG_THEN_RESPOND: QueryKGThenRespondAction(kg_loader, sparql_generator, llm_client),
             ActionType.PLAN_THEN_RESPOND: PlanThenRespondAction(llm_client),
             ActionType.ASK_CLARIFYING_QUESTION: AskClarifyingQuestionAction(llm_client),
-            ActionType.STORE_AND_RESPOND: StoreAndRespondAction(internal_kg, llm_client)
+            # ActionType.STORE_AND_RESPOND: StoreAndRespondAction(internal_kg, llm_client)  # DISABLED - has errors
         }
+        
+        # Add MCP action if manager is available
+        if mcp_manager:
+            self.actions[ActionType.QUERY_MCP_THEN_RESPOND] = QueryMCPThenRespondAction(mcp_manager, llm_client)
 
         logger.info(f"Initialized ActionManager with {len(self.actions)} actions")
 
@@ -167,7 +173,8 @@ class ActionManager:
             ActionType.QUERY_KG_THEN_RESPOND: 0.85,    # Good for factual questions - increased
             ActionType.PLAN_THEN_RESPOND: 0.65,        # Good for complex questions - decreased to prevent overuse
             ActionType.ASK_CLARIFYING_QUESTION: 0.65,  # Good for ambiguous questions - increased
-            ActionType.STORE_AND_RESPOND: 0.7          # Good when learning new info - increased
+            ActionType.QUERY_MCP_THEN_RESPOND: 0.80,   # Good for biomedical questions
+            # ActionType.STORE_AND_RESPOND: 0.7          # Good when learning new info - DISABLED
         }
 
         confidence = base_confidence.get(action_type, 0.5)
@@ -195,13 +202,37 @@ class ActionManager:
             if any(word in query for word in ["explain", "analyze", "compare", "why", "how"]):
                 confidence += 0.1
 
-        elif action_type == ActionType.STORE_AND_RESPOND:
-            # Higher confidence if we have meaningful new entities
-            if entities and len(query.split()) > 3:
-                confidence += 0.2
-            # Lower confidence if we've been storing too much recently
-            if failed_actions > 2:
-                confidence -= 0.3
+        # elif action_type == ActionType.STORE_AND_RESPOND:  # DISABLED
+        #     # Higher confidence if we have meaningful new entities
+        #     if entities and len(query.split()) > 3:
+        #         confidence += 0.2
+        #     # Lower confidence if we've been storing too much recently
+        #     if failed_actions > 2:
+        #         confidence -= 0.3
+
+        elif action_type == ActionType.QUERY_MCP_THEN_RESPOND:
+            # Higher confidence for biomedical/scientific queries
+            biomedical_keywords = [
+                "gene", "protein", "disease", "drug", "medicine", "clinical", "medical",
+                "biology", "biochemistry", "pharmacology", "pathology", "anatomy",
+                "pubmed", "medline", "literature", "research", "study", "paper"
+            ]
+            if any(keyword in query for keyword in biomedical_keywords):
+                confidence += 0.15
+            
+            # Higher confidence for research/literature questions
+            research_patterns = ["research on", "studies about", "papers about", "find papers"]
+            if any(pattern in query for pattern in research_patterns):
+                confidence += 0.10
+            
+            # Higher confidence for factual biomedical questions
+            factual_keywords = ["what", "how", "why", "where", "when", "which"]
+            if any(keyword in query for keyword in factual_keywords) and len(query.split()) > 3:
+                confidence += 0.05
+            
+            # Lower confidence if MCP manager is not available
+            if not self.mcp_manager:
+                confidence = 0.0
 
         elif action_type == ActionType.RESPOND_DIRECTLY:
             # This is the fallback - gets higher confidence when others fail

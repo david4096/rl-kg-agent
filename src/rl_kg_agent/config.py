@@ -45,6 +45,34 @@ class TorchRLConfig:
             self.allowed_domains = ["google.com", "github.com", "pubmed.ncbi.nlm.nih.gov"]
 
 
+@dataclass
+class MCPConfig:
+    """Configuration for MCP (Model Context Protocol) integration."""
+    
+    # Core MCP settings
+    enabled: bool = False
+    config_file: str = "configs/mcp_config.json"
+    default_server: str = "unified_biomedical"
+    
+    # Connection settings
+    connection_timeout: float = 30.0
+    retry_attempts: int = 3
+    retry_delay: float = 1.0
+    max_concurrent_requests: int = 5
+    
+    # Tool preferences
+    prefer_rag_for_questions: bool = True
+    prefer_search_for_entities: bool = True
+    enable_entity_lookup: bool = True
+    default_candidates: int = 20
+    
+    # Integration settings
+    enable_biomedical_enhancement: bool = True
+    auto_detect_biomedical_queries: bool = True
+    fallback_on_error: bool = True
+    cache_responses: bool = True
+
+
 @dataclass 
 class Config:
     """Main configuration class for RL-KG-Agent with TorchRL support."""
@@ -56,6 +84,9 @@ class Config:
     
     # TorchRL configuration
     torchrl: TorchRLConfig = None
+    
+    # MCP configuration
+    mcp: MCPConfig = None
     
     def __post_init__(self):
         """Initialize default configurations."""
@@ -86,6 +117,9 @@ class Config:
             
         if self.torchrl is None:
             self.torchrl = TorchRLConfig()
+            
+        if self.mcp is None:
+            self.mcp = MCPConfig()
 
 
 class ConfigManager:
@@ -121,7 +155,11 @@ class ConfigManager:
             torchrl_data = data.pop('torchrl', {})
             torchrl_config = TorchRLConfig(**torchrl_data)
             
-            config = Config(torchrl=torchrl_config, **data)
+            # Handle nested MCP config
+            mcp_data = data.pop('mcp', {})
+            mcp_config = MCPConfig(**mcp_data)
+            
+            config = Config(torchrl=torchrl_config, mcp=mcp_config, **data)
             return config
             
         except Exception as e:
@@ -273,6 +311,85 @@ def validate_torchrl_config(config: Config) -> tuple[bool, list[str]]:
     return len(errors) == 0, errors
 
 
+def is_mcp_enabled(config: Optional[Config] = None) -> bool:
+    """Check if MCP features are enabled."""
+    if config is None:
+        config = get_config()
+    
+    return config.mcp.enabled
+
+
+def check_mcp_dependencies() -> bool:
+    """Check if MCP dependencies are available."""
+    try:
+        import asyncio
+        import json
+        import subprocess
+        return True
+    except ImportError:
+        return False
+
+
+def validate_mcp_config(config: Config) -> tuple[bool, list[str]]:
+    """
+    Validate MCP configuration.
+    
+    Args:
+        config: Configuration to validate
+        
+    Returns:
+        Tuple of (is_valid, list_of_errors)
+    """
+    errors = []
+    
+    if config.mcp.enabled:
+        # Check dependencies
+        if not check_mcp_dependencies():
+            errors.append("MCP enabled but basic dependencies not available")
+        
+        # Check config file
+        mcp_config_path = config.mcp.config_file
+        if not Path(mcp_config_path).exists():
+            # Try relative to current directory
+            if not Path(mcp_config_path).is_absolute():
+                for possible_path in [mcp_config_path, f"../{mcp_config_path}"]:
+                    if Path(possible_path).exists():
+                        break
+                else:
+                    errors.append(f"MCP config file not found: {mcp_config_path}")
+        
+        # Validate timeout settings
+        if config.mcp.connection_timeout <= 0:
+            errors.append("connection_timeout must be positive")
+        
+        if config.mcp.retry_attempts < 0:
+            errors.append("retry_attempts must be non-negative")
+        
+        if config.mcp.default_candidates <= 0:
+            errors.append("default_candidates must be positive")
+    
+    return len(errors) == 0, errors
+
+
+def get_mcp_manager(config: Optional[Config] = None):
+    """Get MCP manager instance if MCP is enabled."""
+    if config is None:
+        config = get_config()
+    
+    if not config.mcp.enabled:
+        return None
+    
+    try:
+        from .utils.mcp_client import MCPManager
+        return MCPManager(config.mcp.config_file)
+    except ImportError as e:
+        print(f"Warning: Could not import MCP client: {e}")
+        return None
+    except Exception as e:
+        print(f"Warning: Could not create MCP manager: {e}")
+        return None
+
+
 if __name__ == "__main__":
     # Create example configuration
     ConfigManager.create_example_config()
@@ -280,12 +397,24 @@ if __name__ == "__main__":
     # Test configuration loading
     config = get_config()
     print(f"TorchRL enabled: {config.torchrl.enabled}")
-    print(f"Dependencies available: {check_torchrl_dependencies()}")
+    print(f"MCP enabled: {config.mcp.enabled}")
+    print(f"TorchRL dependencies available: {check_torchrl_dependencies()}")
+    print(f"MCP dependencies available: {check_mcp_dependencies()}")
     
+    # Validate TorchRL config
     is_valid, errors = validate_torchrl_config(config)
     if not is_valid:
-        print("Configuration errors:")
+        print("TorchRL configuration errors:")
         for error in errors:
             print(f"  - {error}")
     else:
-        print("Configuration is valid!")
+        print("TorchRL configuration is valid!")
+    
+    # Validate MCP config
+    is_valid, errors = validate_mcp_config(config)
+    if not is_valid:
+        print("MCP configuration errors:")
+        for error in errors:
+            print(f"  - {error}")
+    else:
+        print("MCP configuration is valid!")

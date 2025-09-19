@@ -172,3 +172,5 @@ training_internal_kg.pkl
 eval_internal_kg.pkl
 trained_model/
 *.model
+/mondo-international.owl
+/load_mondo.py

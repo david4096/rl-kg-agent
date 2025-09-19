@@ -8,6 +8,9 @@ from typing import Optional
 import json
 import warnings
 
+# Import environment configuration first
+from .utils.env_config import load_environment_config, setup_ssl_config
+
 from .knowledge.kg_loader import KnowledgeGraphLoader, SPARQLQueryGenerator
 from .knowledge.internal_kg import InternalKnowledgeGraph
 from .actions.action_manager import ActionManager
@@ -15,7 +18,9 @@ from .agents.ppo_agent import PPOKGAgent, create_environment, create_action_exec
 from .utils.reward_calculator import RewardCalculator
 from .data.dataset_loader import QADatasetLoader
 from .utils.llm_client import LLMClient
-from .config import Config, ConfigManager, get_config, is_torchrl_enabled, validate_torchrl_config
+from .utils.enhanced_llm_client import EnhancedLLMClient
+from .utils.http_mcp_manager import HTTPMCPManager
+from .config import Config, ConfigManager, get_config, is_torchrl_enabled, validate_torchrl_config, is_mcp_enabled, get_mcp_manager, validate_mcp_config
 
 
 # Configure logging
@@ -26,13 +31,67 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def create_action_manager_with_mcp(kg_loader, sparql_generator, internal_kg, llm_client, 
+                                   config: Optional[Config] = None, use_mcp: bool = False,
+                                   mcp_config_path: Optional[str] = None) -> ActionManager:
+    """Create action manager with optional MCP support.
+    
+    Args:
+        kg_loader: Knowledge graph loader
+        sparql_generator: SPARQL query generator  
+        internal_kg: Internal knowledge graph
+        llm_client: LLM client
+        config: Configuration object
+        use_mcp: Whether to enable MCP features
+        mcp_config_path: Custom MCP config path
+        
+    Returns:
+        ActionManager with optional MCP support
+    """
+    mcp_manager = None
+    
+    # Load config if not provided
+    if config is None:
+        config = get_config()
+    
+    # Determine if MCP should be enabled
+    enable_mcp = use_mcp or (config and is_mcp_enabled(config))
+    
+    if enable_mcp:
+        try:
+            # Use HTTP MCP manager instead of stdio-based one
+            logger.info("🌐 Initializing HTTP MCP manager...")
+            mcp_manager = HTTPMCPManager("http://localhost:8000")
+            
+            # Test connection asynchronously
+            import asyncio
+            async def test_mcp():
+                return await mcp_manager.initialize()
+            
+            connection_success = asyncio.run(test_mcp())
+            
+            if connection_success:
+                logger.info("✅ HTTP MCP support enabled for biomedical queries")
+            else:
+                logger.warning("❌ Failed to connect to HTTP MCP server")
+                mcp_manager = None
+                    
+        except Exception as e:
+            logger.warning(f"❌ Failed to initialize HTTP MCP support: {e}")
+            mcp_manager = None
+    
+    return ActionManager(kg_loader, sparql_generator, internal_kg, llm_client, mcp_manager)
+
+
 @click.group()
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 @click.option('--config', '-c', type=str, help='Configuration file path')
 @click.option('--use-torchrl', is_flag=True, help='Enable TorchRL features (requires torchrl[llm])')
 @click.option('--torchrl-device', type=click.Choice(['auto', 'cpu', 'cuda']), default='auto', help='Device for TorchRL operations')
+@click.option('--use-mcp', is_flag=True, help='Enable MCP (Model Context Protocol) features for biomedical queries')
+@click.option('--mcp-config', type=str, help='MCP configuration file path')
 @click.pass_context
-def cli(ctx, verbose, config, use_torchrl, torchrl_device):
+def cli(ctx, verbose, config, use_torchrl, torchrl_device, use_mcp, mcp_config):
     """RL-KG-Agent: Reinforcement Learning Agent for Knowledge Graph Reasoning with optional TorchRL support."""
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -69,6 +128,8 @@ def cli(ctx, verbose, config, use_torchrl, torchrl_device):
     
     # Store CLI flags
     ctx.obj['use_torchrl'] = use_torchrl
+    ctx.obj['use_mcp'] = use_mcp
+    ctx.obj['mcp_config'] = mcp_config
     ctx.obj['verbose'] = verbose
 
 
@@ -78,8 +139,9 @@ def cli(ctx, verbose, config, use_torchrl, torchrl_device):
 @click.option('--max-steps', default=5, help='Maximum steps per query')
 @click.option('--save-interactions', is_flag=True, help='Save interactions to internal KG')
 @click.option('--enable-tools', is_flag=True, help='Enable TorchRL tool enhancements for this session')
+@click.option('--use-azure-llm', is_flag=True, help='Use Azure OpenAI LangChain client instead of HuggingFace')
 @click.pass_context
-def interactive(ctx, ttl_file, model_path, max_steps, save_interactions, enable_tools):
+def interactive(ctx, ttl_file, model_path, max_steps, save_interactions, enable_tools, use_azure_llm):
     """Start interactive mode for querying the agent with optional TorchRL enhancements."""
     try:
         config = ctx.obj.get('config', Config())
@@ -102,11 +164,24 @@ def interactive(ctx, ttl_file, model_path, max_steps, save_interactions, enable_
         # Initialize internal KG
         internal_kg = InternalKnowledgeGraph("internal_kg.pkl")
 
-        # Initialize LLM client (placeholder)
-        llm_client = LLMClient()
+        # Initialize LLM client based on user preference
+        if use_azure_llm:
+            click.echo("🔌 Using Azure OpenAI LangChain client...")
+            llm_client = EnhancedLLMClient(
+                use_mcp=ctx.obj.get('use_mcp', False),
+                verbose=True
+            )
+        else:
+            click.echo("🤗 Using HuggingFace LLM client...")
+            llm_client = LLMClient()
 
-        # Initialize action manager (potentially enhanced)
-        action_manager = ActionManager(kg_loader, sparql_generator, internal_kg, llm_client)
+        # Initialize action manager with MCP support
+        use_mcp = ctx.obj.get('use_mcp', False)
+        mcp_config_path = ctx.obj.get('mcp_config', None)
+        action_manager = create_action_manager_with_mcp(
+            kg_loader, sparql_generator, internal_kg, llm_client,
+            config=config, use_mcp=use_mcp, mcp_config_path=mcp_config_path
+        )
         enhanced_action_manager = create_action_executor(
             action_manager=action_manager,
             kg_loader=kg_loader,
@@ -352,14 +427,16 @@ def check_deps():
 
 @cli.command()
 @click.option('--ttl-file', '-t', type=str, required=True, help='Path to TTL knowledge graph file')
-@click.option('--dataset', '-d', type=str, default="squad", help='Dataset to use (squad, natural_questions, ms_marco)')
+@click.option('--dataset', '-d', type=str, default="squad", help='Dataset to use: squad, natural_questions, ms_marco')
 @click.option('--episodes', '-e', type=int, default=1000, help='Number of training episodes')
 @click.option('--output-model', '-o', type=str, default="trained_model", help='Output path for trained model')
 @click.option('--sample-size', type=int, help='Limit dataset size for faster training')
 @click.option('--visualize', is_flag=True, help='Show live training visualization dashboard')
 @click.option('--use-torchrl-env', is_flag=True, help='Use TorchRL environment for training')
+@click.option('--llm-model', type=str, default="google/gemma-2-2b-it", help='LLM model to use for training')
+@click.option('--use-azure-llm', is_flag=True, help='Use Azure OpenAI LangChain client instead of HuggingFace')
 @click.pass_context
-def train(ctx, ttl_file, dataset, episodes, output_model, sample_size, visualize, use_torchrl_env):
+def train(ctx, ttl_file, dataset, episodes, output_model, sample_size, visualize, use_torchrl_env, llm_model, use_azure_llm):
     """Train the RL agent using QA datasets."""
     try:
         click.echo("🎯 Starting training...")
@@ -369,9 +446,24 @@ def train(ctx, ttl_file, dataset, episodes, output_model, sample_size, visualize
         kg_loader = KnowledgeGraphLoader(ttl_file)
         sparql_generator = SPARQLQueryGenerator()
         internal_kg = InternalKnowledgeGraph("training_internal_kg.pkl")
-        llm_client = LLMClient()
+        
+        # Initialize LLM client based on user preference
+        if use_azure_llm:
+            click.echo("🔌 Using Azure OpenAI LangChain client...")
+            llm_client = EnhancedLLMClient(
+                use_mcp=ctx.obj.get('use_mcp', False),
+                verbose=True
+            )
+        else:
+            click.echo(f"🤗 Using HuggingFace model: {llm_model}")
+            llm_client = LLMClient(model_name=llm_model)
 
-        action_manager = ActionManager(kg_loader, sparql_generator, internal_kg, llm_client)
+        action_manager = create_action_manager_with_mcp(
+            kg_loader, sparql_generator, internal_kg, llm_client,
+            config=ctx.obj.get('config'),
+            use_mcp=ctx.obj.get('use_mcp', False),
+            mcp_config_path=ctx.obj.get('mcp_config', None)
+        )
         reward_calculator = RewardCalculator()
 
         # Load training dataset
@@ -408,7 +500,25 @@ def train(ctx, ttl_file, dataset, episodes, output_model, sample_size, visualize
                 visualize = False
 
         # Initialize and train agent
-        agent = PPOKGAgent(action_manager, reward_calculator, internal_kg)
+        if use_torchrl_env:
+            click.echo("🚀 Using TorchRL environment for training")
+            # Check if TorchRL is available
+            try:
+                from ..envs.torchrl_kg_env import create_kg_environment
+                # Use TorchRL environment
+                env = create_kg_environment(
+                    kg_loader=kg_loader,
+                    action_manager=action_manager,
+                    reward_calculator=reward_calculator,
+                    internal_kg=internal_kg,
+                    use_torchrl=True
+                )
+                agent = PPOKGAgent(action_manager, reward_calculator, internal_kg, env=env)
+            except ImportError:
+                click.echo("⚠️  TorchRL not available, falling back to standard environment")
+                agent = PPOKGAgent(action_manager, reward_calculator, internal_kg)
+        else:
+            agent = PPOKGAgent(action_manager, reward_calculator, internal_kg)
 
         # Convert episodes to timesteps (rough approximation)
         total_timesteps = episodes * 5  # Assuming ~5 steps per episode
@@ -446,8 +556,9 @@ def train(ctx, ttl_file, dataset, episodes, output_model, sample_size, visualize
 @click.option('--test-file', type=str, help='JSON file with test questions')
 @click.option('--model-path', '-m', type=str, required=True, help='Path to trained model')
 @click.option('--output-file', '-o', type=str, help='Output file for results')
+@click.option('--use-azure-llm', is_flag=True, help='Use Azure OpenAI LangChain client instead of HuggingFace')
 @click.pass_context
-def evaluate(ctx, ttl_file, test_file, model_path, output_file):
+def evaluate(ctx, ttl_file, test_file, model_path, output_file, use_azure_llm):
     """Evaluate the trained agent on test questions."""
     try:
         click.echo("📊 Starting evaluation...")
@@ -456,9 +567,24 @@ def evaluate(ctx, ttl_file, test_file, model_path, output_file):
         kg_loader = KnowledgeGraphLoader(ttl_file)
         sparql_generator = SPARQLQueryGenerator()
         internal_kg = InternalKnowledgeGraph("eval_internal_kg.pkl")
-        llm_client = LLMClient()
+        
+        # Initialize LLM client based on user preference
+        if use_azure_llm:
+            click.echo("🔌 Using Azure OpenAI LangChain client...")
+            llm_client = EnhancedLLMClient(
+                use_mcp=ctx.obj.get('use_mcp', False),
+                verbose=True
+            )
+        else:
+            click.echo("🤗 Using HuggingFace LLM client...")
+            llm_client = LLMClient()
 
-        action_manager = ActionManager(kg_loader, sparql_generator, internal_kg, llm_client)
+        action_manager = create_action_manager_with_mcp(
+            kg_loader, sparql_generator, internal_kg, llm_client,
+            config=ctx.obj.get('config'),
+            use_mcp=ctx.obj.get('use_mcp', False),
+            mcp_config_path=ctx.obj.get('mcp_config', None)
+        )
         reward_calculator = RewardCalculator()
 
         # Load trained agent
@@ -666,8 +792,8 @@ def _train_with_dataset(agent, dataset, total_timesteps):
     for i, example in enumerate(examples[:3]):
         logger.info(f"Example {i+1}: Question: '{example['question'][:80]}...', Answer: '{example.get('answer', 'N/A')[:50]}...'")
 
-    # Give the environment access to all training examples
-    agent.env.set_training_examples(examples)
+    # Give the agent access to all training examples
+    agent.set_training_examples(examples)
 
     # Train with standard PPO - the environment will cycle through examples automatically
     try:

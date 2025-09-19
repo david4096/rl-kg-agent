@@ -1,10 +1,10 @@
 {
   "reward_weights": {
-    "semantic_similarity": 0.5,
-    "action_success": 0.2,
-    "knowledge_gain": 0.2,
-    "efficiency": 0.05,
-    "user_satisfaction": 0.05
+    "semantic_weight": 0.5,
+    "success_weight": 0.2,
+    "knowledge_weight": 0.2,
+    "efficiency_weight": 0.05,
+    "satisfaction_weight": 0.05
   },
   "ppo_config": {
     "learning_rate": 1e-4,
@@ -58,7 +58,7 @@
     "log_file": "training.log"
   },
   "llm_config": {
-    "model_name": "gpt-3.5-turbo",
+    "model_name": "google/gemma-2-2b-it",
     "api_key": null,
     "max_tokens": 256,
     "temperature": 0.5,

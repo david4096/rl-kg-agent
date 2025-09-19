@@ -499,6 +499,20 @@ class TorchRLActionExecutor:
             "sample_size": len(recent)
         }
     
+    def get_applicable_actions(self, context: Dict[str, Any]) -> List:
+        """
+        Get list of actions that are applicable in the current context.
+        
+        Delegates to the underlying action manager to maintain compatibility.
+        
+        Args:
+            context: Current context including query, entities, etc.
+
+        Returns:
+            List of applicable action types
+        """
+        return self.action_manager.get_applicable_actions(context)
+    
     def reset_metrics(self):
         """Reset execution metrics."""
         self.metrics = {

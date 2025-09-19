@@ -64,14 +64,15 @@ class KGReasoningEnvironment(gym.Env):
         self.max_steps = max_steps
         self.training_monitor = training_monitor
 
-        # Action space: 5 discrete actions
-        self.action_space = gym.spaces.Discrete(len(ActionType))
+        # Dynamic action space based on available actions
+        num_actions = len(self.action_manager.actions)
+        self.action_space = gym.spaces.Discrete(num_actions)
 
         # Observation space: dictionary with various features
         self.observation_space = gym.spaces.Dict({
             "query_embedding": gym.spaces.Box(low=-1, high=1, shape=(384,), dtype=np.float32),
             "context_features": gym.spaces.Box(low=0, high=1, shape=(20,), dtype=np.float32),
-            "action_history": gym.spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32),
+            "action_history": gym.spaces.Box(low=0, high=1, shape=(num_actions,), dtype=np.float32),
             "internal_kg_features": gym.spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)
         })
 
@@ -97,7 +98,8 @@ class KGReasoningEnvironment(gym.Env):
             self._setup_next_training_example()
         self.step_count = 0
         self.episode_reward = 0
-        self.action_history = [0] * 5  # Track recent actions
+        num_actions = len(self.action_manager.actions)
+        self.action_history = [0] * num_actions  # Track recent actions dynamically
         self.conversation_history = []
         self.failed_actions = 0
 
@@ -115,6 +117,26 @@ class KGReasoningEnvironment(gym.Env):
         """
         action_type = ActionType(action)
         self.step_count += 1
+
+        # 🎯 ENHANCED LOGGING: Show action selection decision
+        print(f"\n{'='*80}")
+        print(f"🎯 ACTION SELECTION - Step {self.step_count}")
+        print(f"{'='*80}")
+        print(f"📋 Query: '{self.current_context.get('query', 'N/A')}'")
+        print(f"🎲 Action Chosen: {action_type.name} (ID: {action})")
+        print(f"🔢 Available Actions: {[a.name for a in ActionType]}")
+        
+        # Show action recommendations if available
+        try:
+            recommendations = self.action_manager.get_action_recommendations(self.current_context)
+            print(f"🎯 Action Confidence Scores:")
+            for action_rec, confidence in recommendations:
+                marker = "👉" if action_rec == action_type else "  "
+                print(f"  {marker} {action_rec.name}: {confidence:.3f}")
+        except:
+            pass
+        
+        print(f"{'='*80}")
 
         # Update action history
         self.action_history = self.action_history[1:] + [action]
@@ -137,6 +159,24 @@ class KGReasoningEnvironment(gym.Env):
             # Calculate reward with updated context
             reward_components = self.reward_calculator.calculate_reward(context, action_result)
             reward = reward_components.total
+
+            # 🏆 ENHANCED LOGGING: Show reward calculation and action results
+            print(f"\n{'='*80}")
+            print(f"🏆 ACTION RESULTS & REWARD CALCULATION")
+            print(f"{'='*80}")
+            print(f"✅ Action Executed: {action_type.name}")
+            print(f"📈 Action Success: {'✅ Yes' if action_result.success else '❌ No'}")
+            print(f"💭 Action Response: {action_result.response[:200]}{'...' if len(action_result.response) > 200 else ''}")
+            print(f"📊 Reward Components:")
+            print(f"   🎯 Semantic Similarity: {reward_components.semantic_similarity:.3f}")
+            print(f"   ✅ Action Success: {reward_components.action_success:.3f}")
+            print(f"   📚 Knowledge Gain: {reward_components.knowledge_gain:.3f}")
+            print(f"   ⚡ Efficiency: {reward_components.efficiency:.3f}")
+            print(f"   😊 User Satisfaction: {reward_components.user_satisfaction:.3f}")
+            print(f"   🎲 Action Diversity: {reward_components.action_diversity:.3f}")
+            print(f"🏆 Total Reward: {reward:.3f}")
+            print(f"📊 Episode Stats: Step {self.step_count}/{self.max_steps}, Failed: {self.failed_actions}")
+            print(f"{'='*80}\n")
 
             # Log detailed training information for debugging
             logger.info(f"TRAINING DEBUG - Action: {action_type.name}")
@@ -177,6 +217,7 @@ class KGReasoningEnvironment(gym.Env):
             info = {
                 "action_type": action_type.name,
                 "action_success": action_result.success,
+                "action_response": action_result.response,
                 "reward_components": reward_components,
                 "step_count": self.step_count,
                 "failed_actions": self.failed_actions
@@ -262,10 +303,11 @@ class KGReasoningEnvironment(gym.Env):
         context_features = self._extract_context_features()
 
         # Action history (one-hot encoded recent actions)
-        action_hist = np.zeros(5)
+        num_actions = len(self.action_manager.actions)
+        action_hist = np.zeros(num_actions)
         for i, action in enumerate(self.action_history):
             if i < len(action_hist):
-                action_hist[i] = action / len(ActionType)  # Normalize
+                action_hist[i] = action / num_actions  # Normalize by number of actions
 
         # Internal KG features
         internal_kg_features = self._extract_internal_kg_features()
@@ -358,6 +400,33 @@ class KGReasoningEnvironment(gym.Env):
             logger.warning(f"Failed to extract internal KG features: {e}")
 
         return features
+
+    def set_training_examples(self, examples: List[Dict[str, Any]]):
+        """Set training examples for the environment to cycle through.
+
+        Args:
+            examples: List of training examples with 'question', 'answer', etc.
+        """
+        self.training_examples = examples
+        self.current_example_idx = 0
+        logger.info(f"Environment: Set {len(examples)} training examples")
+
+    def _setup_next_training_example(self):
+        """Setup the next training example from the dataset."""
+        if not hasattr(self, 'training_examples') or not self.training_examples:
+            return
+
+        example = self.training_examples[self.current_example_idx]
+        self.set_query(
+            example['question'],
+            example.get('entities', []),
+            example.get('answer', '')
+        )
+
+        # Move to next example for next episode
+        self.current_example_idx = (self.current_example_idx + 1) % len(self.training_examples)
+
+        logger.debug(f"Setup training example: '{example['question'][:50]}...'")
 
 
 def create_environment(
@@ -518,7 +587,8 @@ class PPOKGAgent:
     def __init__(self, action_manager, reward_calculator, internal_kg,
                  learning_rate: float = 3e-4, n_steps: int = 2048,
                  batch_size: int = 64, n_epochs: int = 10,
-                 clip_range: float = 0.2, ent_coef: float = 0.01):
+                 clip_range: float = 0.2, ent_coef: float = 0.01,
+                 env=None):
         """Initialize PPO agent.
 
         Args:
@@ -531,13 +601,20 @@ class PPOKGAgent:
             n_epochs: Number of training epochs per update
             clip_range: PPO clipping range
             ent_coef: Entropy coefficient for exploration
+            env: Optional environment to use (if None, creates standard environment)
         """
         self.action_manager = action_manager
         self.reward_calculator = reward_calculator
         self.internal_kg = internal_kg
 
         # Create environment (will be updated with training monitor when training starts)
-        self.env = KGReasoningEnvironment(action_manager, reward_calculator, internal_kg)
+        if env is not None:
+            self.env = env
+        else:
+            self.env = KGReasoningEnvironment(action_manager, reward_calculator, internal_kg)
+        
+        # Set agent reference on environment for training coordination
+        self.env.agent = self
 
         # PPO configuration
         self.ppo_config = {
@@ -558,6 +635,20 @@ class PPOKGAgent:
         # Training tracking
         self.training_steps = 0
         self.episodes_completed = 0
+
+    def set_training_examples(self, examples: List[Dict[str, Any]]):
+        """Set training examples for both agent and environment.
+
+        Args:
+            examples: List of training examples with 'question', 'answer', etc.
+        """
+        self.training_examples = examples
+        
+        # Also set on environment
+        if hasattr(self.env, 'set_training_examples'):
+            self.env.set_training_examples(examples)
+        
+        logger.info(f"PPOKGAgent: Set {len(examples)} training examples")
 
     def _initialize_model(self):
         """Initialize the PPO model."""
@@ -679,6 +770,7 @@ class PPOKGAgent:
                 "action": ActionType(action).name,
                 "reward": reward,
                 "success": info.get("action_success", False),
+                "response": info.get("action_response", ""),
                 "info": info
             })
 

@@ -16,7 +16,8 @@ class ActionType(IntEnum):
     QUERY_KG_THEN_RESPOND = 1     # Query static KG, then respond with LLM
     PLAN_THEN_RESPOND = 2         # Plan approach, then respond with LLM
     ASK_CLARIFYING_QUESTION = 3   # Ask for more information from user
-    STORE_AND_RESPOND = 4         # Store to internal KG, then respond with LLM
+    QUERY_MCP_THEN_RESPOND = 4    # Query MCP server for biomedical info, then respond
+    # STORE_AND_RESPOND = 5         # Store to internal KG, then respond with LLM (DISABLED - has errors)
 
 
 @dataclass
@@ -71,6 +72,8 @@ class RespondDirectlyAction(BaseAction):
         internal_knowledge = context.get("internal_knowledge", "")
 
         try:
+            logging.info(f"🎯 ACTION: RESPOND_DIRECTLY - Processing query: '{query}'")
+            
             # Create messages for LLM
             messages = [
                 {"role": "system", "content": "You are a helpful assistant. Answer the user's question directly and concisely."},
@@ -80,9 +83,12 @@ class RespondDirectlyAction(BaseAction):
             # Add internal knowledge context if available
             if internal_knowledge:
                 messages[0]["content"] += f"\\n\\nRelevant context from memory: {internal_knowledge}"
+                logging.info(f"🎯 Added internal knowledge context ({len(internal_knowledge)} chars)")
 
             # Generate response
             response = self.llm_client.generate_response(messages)
+            
+            logging.info(f"🎯 RESPOND_DIRECTLY completed successfully")
 
             return ActionResult(
                 success=True,
@@ -95,7 +101,8 @@ class RespondDirectlyAction(BaseAction):
             )
 
         except Exception as e:
-            logger.error(f"Direct response failed: {e}")
+            error_msg = f"Direct response failed: {e}"
+            logging.error(f"🚨 RESPOND_DIRECTLY failed: {error_msg}")
             return ActionResult(
                 success=False,
                 response="I'm sorry, I had trouble processing your question. Could you please rephrase it?",
@@ -548,3 +555,248 @@ class StoreAndRespondAction(BaseAction):
 
     def get_description(self) -> str:
         return "Store interaction in memory and respond with confirmation"
+
+
+class QueryMCPThenRespondAction(BaseAction):
+    """Query MCP server for biomedical information, then respond with enhanced context."""
+
+    def __init__(self, mcp_manager, llm_client):
+        super().__init__(ActionType.QUERY_MCP_THEN_RESPOND)
+        self.mcp_manager = mcp_manager
+        self.llm_client = llm_client
+
+    def execute(self, context: Dict[str, Any], **kwargs) -> ActionResult:
+        """Query MCP server then provide enhanced response."""
+        query = context.get("query", "")
+        entities = context.get("entities", [])
+
+        try:
+            logging.info(f"🎯 ACTION: QUERY_MCP_THEN_RESPOND - Processing query: '{query}'")
+            
+            # Determine which MCP tool to use based on query type
+            tool_name, arguments = self._select_mcp_tool(query, entities, context)
+            
+            if not tool_name:
+                logging.warning(f"🎯 No suitable MCP tool found for query: '{query}'")
+                return self._fallback_response(query, context, "No suitable MCP tool found for query")
+
+            logging.info(f"🎯 Selected MCP tool: '{tool_name}' with args: {arguments}")
+            
+            # Call the MCP server asynchronously
+            import asyncio
+            mcp_response = asyncio.run(self.mcp_manager.call_tool(
+                "unified_biomedical", tool_name, arguments
+            ))
+            
+            if not mcp_response.success:
+                error_msg = f"MCP query failed: {mcp_response.error}"
+                logging.error(f"🚨 MCP tool call failed: {mcp_response.error}")
+                return self._fallback_response(query, context, error_msg)
+            
+            # Generate response with MCP information
+            mcp_info = mcp_response.result
+            enhanced_context = context.get("internal_knowledge", "")
+            
+            if mcp_info:
+                enhanced_context = f"{enhanced_context}\n\nBiomedical Information from MCP Server:\n{mcp_info}".strip()
+                logging.info(f"🎯 MCP results added to context ({len(mcp_info)} chars)")
+            
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a knowledgeable biomedical assistant with access to scientific literature and entity databases. Answer the user's question using the provided biomedical information."
+                },
+                {"role": "user", "content": query}
+            ]
+            
+            if enhanced_context:
+                messages[0]["content"] += f"\n\nAvailable information: {enhanced_context}"
+            
+            response = self.llm_client.generate_response(messages)
+            
+            # Extract entities from MCP response if possible
+            entities_discovered = self._extract_entities_from_mcp_response(mcp_info)
+            
+            return ActionResult(
+                success=True,
+                response=response,
+                metadata={
+                    "action": "mcp_query_response",
+                    "mcp_tool": tool_name,
+                    "mcp_success": True,
+                    "mcp_execution_time": mcp_response.execution_time,
+                    "context_length": len(enhanced_context) if enhanced_context else 0,
+                    "entities_found": len(entities_discovered)
+                },
+                entities_discovered=entities_discovered,
+                confidence=0.9 if mcp_info else 0.6
+            )
+
+        except Exception as e:
+            logger.error(f"MCP query and response failed: {e}")
+            return self._fallback_response(query, context, str(e))
+
+    def _select_mcp_tool(self, query: str, entities: List[str], context: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+        """Select appropriate MCP tool and arguments based on query characteristics.
+        
+        Returns:
+            Tuple of (tool_name, arguments) or (None, None) if no suitable tool
+        """
+        query_lower = query.lower()
+        
+        # Check for question-answering patterns
+        qa_keywords = ["what", "how", "why", "explain", "describe", "tell me about"]
+        is_question = any(keyword in query_lower for keyword in qa_keywords)
+        
+        # Check for search/lookup patterns  
+        search_keywords = ["find", "search", "look up", "information about", "papers about"]
+        is_search = any(keyword in query_lower for keyword in search_keywords)
+        
+        # Check for entity lookup patterns
+        entity_keywords = ["entity", "id:", "details about", "information on"]
+        is_entity_lookup = any(keyword in query_lower for keyword in entity_keywords)
+        
+        # Select tool based on query type
+        if is_entity_lookup and entities:
+            # Use entity details tool for specific entity lookups
+            return "get_entity_details", {"entity_id": entities[0]}
+        
+        elif is_question and len(query.split()) > 3:
+            # Use RAG answer for complex questions
+            return "get_rag_answer", {
+                "question": query,
+                "candidates": 20,
+                "include_conversation_details": True
+            }
+        
+        elif is_search or entities or len(query.split()) >= 2:
+            # Use semantic search for general searches
+            return "medline_semantic_search", {"query": query}
+        
+        else:
+            # No suitable tool found
+            return None, None
+
+    def _extract_entities_from_mcp_response(self, mcp_response: str) -> List[str]:
+        """Extract entity names from MCP response text.
+        
+        Args:
+            mcp_response: Text response from MCP server
+            
+        Returns:
+            List of entity names found in the response
+        """
+        if not mcp_response:
+            return []
+        
+        entities = []
+        
+        # Look for patterns like "1. Entity Name" or "• Entity Name"
+        import re
+        entity_patterns = [
+            r'^\d+\.\s+([^(]+?)(?:\s*\(|$)',  # Numbered list: "1. Entity Name (ID)"
+            r'^•\s+([^(]+?)(?:\s*\(|$)',      # Bullet list: "• Entity Name (ID)"
+            r'Entity.*?:\s*([^(]+?)(?:\s*\(|$)'  # "Entity: Name (ID)"
+        ]
+        
+        for line in mcp_response.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+                
+            for pattern in entity_patterns:
+                match = re.match(pattern, line, re.IGNORECASE)
+                if match:
+                    entity_name = match.group(1).strip()
+                    if entity_name and len(entity_name) > 1:
+                        entities.append(entity_name)
+                    break
+        
+        return list(set(entities))  # Remove duplicates
+
+    def _fallback_response(self, query: str, context: Dict[str, Any], error_msg: str) -> ActionResult:
+        """Generate fallback response when MCP query fails."""
+        try:
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant. Answer the user's question directly."},
+                {"role": "user", "content": query}
+            ]
+            
+            # Add internal knowledge if available
+            internal_knowledge = context.get("internal_knowledge", "")
+            if internal_knowledge:
+                messages[0]["content"] += f"\n\nRelevant context from memory: {internal_knowledge}"
+            
+            response = self.llm_client.generate_response(messages)
+            
+            return ActionResult(
+                success=True,
+                response=response,
+                metadata={
+                    "action": "mcp_query_response",
+                    "mcp_success": False,
+                    "fallback": True,
+                    "error": error_msg,
+                    "used_internal_knowledge": bool(internal_knowledge)
+                },
+                confidence=0.5
+            )
+            
+        except Exception as fallback_error:
+            logger.error(f"Fallback response also failed: {fallback_error}")
+            return ActionResult(
+                success=False,
+                response="I'm sorry, I couldn't find information to answer your question.",
+                metadata={
+                    "action": "mcp_query_response",
+                    "mcp_success": False,
+                    "fallback_error": str(fallback_error),
+                    "original_error": error_msg
+                },
+                confidence=0.0
+            )
+
+    def is_applicable(self, context: Dict[str, Any]) -> bool:
+        """Applicable for biomedical queries, scientific questions, or entity lookups."""
+        query = context.get("query", "").lower()
+        entities = context.get("entities", [])
+        
+        # Biomedical/scientific keywords
+        biomedical_keywords = [
+            "gene", "protein", "disease", "drug", "medicine", "clinical", "medical",
+            "biology", "biochemistry", "pharmacology", "pathology", "anatomy",
+            "pubmed", "medline", "literature", "research", "study", "paper",
+            "molecule", "compound", "treatment", "therapy", "diagnosis",
+            "biomarker", "pathway", "mechanism", "interaction"
+        ]
+        
+        # Question patterns that benefit from literature search
+        question_patterns = [
+            "what is", "what are", "how does", "why does", "what causes",
+            "research on", "studies about", "papers about", "information about",
+            "find papers", "scientific evidence", "clinical trials"
+        ]
+        
+        # Check for biomedical content
+        has_biomedical_content = any(keyword in query for keyword in biomedical_keywords)
+        
+        # Check for research/literature patterns
+        has_research_pattern = any(pattern in query for pattern in question_patterns)
+        
+        # Check for scientific/factual questions
+        factual_keywords = ["what", "how", "why", "where", "when", "which"]
+        is_factual_question = any(keyword in query for keyword in factual_keywords)
+        
+        # More likely to be applicable if:
+        # - Contains biomedical terms
+        # - Is a research/literature query
+        # - Is a factual question with some complexity
+        # - Has entities that might be biomedical
+        
+        return (has_biomedical_content or 
+                has_research_pattern or 
+                (is_factual_question and len(query.split()) > 3) or
+                bool(entities))
+
+    def get_description(self) -> str:
+        return "Query biomedical MCP server for literature search and entity information, then provide informed response"

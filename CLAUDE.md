@@ -72,3 +72,4 @@ The agent can take 5 actions:
 - Reward system combines semantic similarity, action success, knowledge gain, efficiency, and user satisfaction
 - Training uses QA datasets (SQuAD, Natural Questions, MS MARCO) for learning
 - CLI provides interactive mode, training, and evaluation workflows
+- uv run rl-kg-agent train --ttl-file examples/simple_knowledge_graph.ttl --dataset squad --episodes 5 --output-model kg-model-test --llm-model google/gemma-3-4b-it --visualize
